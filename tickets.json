@@ -1,0 +1,65 @@
+[
+  {
+    "severity": "High",
+    "bot_id": "BOT-001",
+    "bot": "KYC-Refresh-Bot",
+    "platform": "UiPath",
+    "clause": "Clause 1",
+    "rule": "Regulated entities shall carry out periodic re-verification of KYC for high-risk customers at least once every 2 years.",
+    "obligation": {
+      "clause": "Clause 1",
+      "summary": "Regulated entities shall carry out periodic re-verification of KYC for high-risk customers at least once every 2 years.",
+      "parameter": "kyc_reverification_years_high_risk",
+      "operator": "<=",
+      "required_value": 2.0,
+      "unit": "years"
+    },
+    "status": "violating",
+    "confidence": 0.95,
+    "reason": "kyc_reverification_years_high_risk is 3 years, rule requires <= 2.",
+    "decision": null,
+    "jira_key": "DRY-RUN"
+  },
+  {
+    "severity": "Medium",
+    "bot_id": "BOT-004",
+    "bot": "Loan-Disbursal-Bot",
+    "platform": "UiPath",
+    "clause": "Clause 1",
+    "rule": "Regulated entities shall carry out periodic re-verification of KYC for high-risk customers at least once every 2 years.",
+    "obligation": {
+      "clause": "Clause 1",
+      "summary": "Regulated entities shall carry out periodic re-verification of KYC for high-risk customers at least once every 2 years.",
+      "parameter": "kyc_reverification_years_high_risk",
+      "operator": "<=",
+      "required_value": 2.0,
+      "unit": "years"
+    },
+    "status": "at_risk",
+    "confidence": 0.5,
+    "reason": "Bot touches this area but exposes no 'kyc_reverification_years_high_risk' setting; needs manual review.",
+    "decision": null,
+    "jira_key": "DRY-RUN"
+  },
+  {
+    "severity": "High",
+    "bot_id": "BOT-003",
+    "bot": "Sanctions-Screening-Bot",
+    "platform": "UiPath",
+    "clause": "Clause 3",
+    "rule": "Customer names shall be screened against sanctions lists on a daily basis, i.e. at an interval of not more than 1 day.",
+    "obligation": {
+      "clause": "Clause 3",
+      "summary": "Customer names shall be screened against sanctions lists on a daily basis, i.e. at an interval of not more than 1 day.",
+      "parameter": "sanctions_screening_frequency_days",
+      "operator": "<=",
+      "required_value": 1.0,
+      "unit": "days"
+    },
+    "status": "violating",
+    "confidence": 0.95,
+    "reason": "sanctions_screening_frequency_days is 2 days, rule requires <= 1.",
+    "decision": null,
+    "jira_key": "DRY-RUN"
+  }
+]

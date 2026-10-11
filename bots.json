@@ -1,0 +1,34 @@
+[
+  {
+    "id": "BOT-001",
+    "name": "KYC-Refresh-Bot",
+    "platform": "UiPath",
+    "description": "Scans the customer master, picks customers due for KYC re-verification based on risk category, emails document requests and updates the KYC status in the core banking system.",
+    "tags": ["kyc", "re-verification", "customer risk", "high-risk customers"],
+    "parameters": {"kyc_reverification_years_high_risk": 3}
+  },
+  {
+    "id": "BOT-002",
+    "name": "STR-Filer-Bot",
+    "platform": "Blue Prism",
+    "description": "Collects flagged suspicious transactions from the monitoring queue, prepares the suspicious transaction report and submits it to the FIU portal.",
+    "tags": ["suspicious transaction", "str", "fiu", "aml reporting"],
+    "parameters": {"str_filing_days": 7}
+  },
+  {
+    "id": "BOT-003",
+    "name": "Sanctions-Screening-Bot",
+    "platform": "UiPath",
+    "description": "Screens customer names against sanctions and watch lists, logs hits for analyst review.",
+    "tags": ["sanctions", "screening", "watchlist", "customer names"],
+    "parameters": {"sanctions_screening_frequency_days": 2}
+  },
+  {
+    "id": "BOT-004",
+    "name": "Loan-Disbursal-Bot",
+    "platform": "UiPath",
+    "description": "Validates approved loan applications, checks the customer risk category and KYC status, and triggers disbursal to the customer account.",
+    "tags": ["loan", "disbursal", "customer risk", "kyc status"],
+    "parameters": {}
+  }
+]

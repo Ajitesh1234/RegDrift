@@ -1,0 +1,11 @@
+SAMPLE CIRCULAR (illustrative paraphrase for demo, not an actual RBI text)
+Ref: DEMO/2026-27/101  Date: 01 October 2026
+Subject: Revised timelines for KYC, suspicious transaction reporting and sanctions screening
+
+Clause 1: Regulated entities shall carry out periodic re-verification of KYC for high-risk customers at least once every 2 years.
+
+Clause 2: Suspicious transaction reports shall be filed within 7 days of the date of arriving at a conclusion that a transaction is suspicious.
+
+Clause 3: Customer names shall be screened against sanctions lists on a daily basis, i.e. at an interval of not more than 1 day.
+
+Clause 4: Regulated entities shall display the grievance redressal officer details on their website.
