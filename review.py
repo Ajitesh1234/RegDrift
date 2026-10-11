@@ -1,5 +1,5 @@
 """Human-in-the-loop review. Approve/reject each ticket; labels feed LoRA training.
-Usage: python review.py            (interactive)
+Usage: python review.py            (interactive; in Colab use:  %run review.py)
 Non-interactive: edit tickets.json, set "decision" to "approve" or "reject"
 (optionally "corrected_obligation": {...}), then run: python review.py --collect
 """

@@ -1,3 +1,6 @@
-langgraph
-chromadb
-pypdf
+# Runtime (pipeline + importer). LangGraph and ChromaDB are optional: without them the code falls back
+# to a plain sequential runner and a bag-of-words search.
+langgraph>=0.2
+chromadb>=0.5
+pypdf>=4.0
+openpyxl>=3.1

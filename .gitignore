@@ -1,3 +1,13 @@
 __pycache__/
-chroma/
+*.pyc
 .env
+chroma/
+out/
+reports/
+tickets.json
+regdrift-lora/
+regdrift-lora.zip
+data/train.jsonl
+data/test.jsonl
+data/split_report.json
+*.tmp

@@ -1,0 +1,5 @@
+# Only needed for LoRA training / inference (Colab already has torch)
+transformers>=4.44
+peft>=0.12
+datasets>=2.20
+accelerate>=0.33

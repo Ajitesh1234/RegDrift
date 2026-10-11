@@ -203,9 +203,111 @@ class PermissiveListRule(unittest.TestCase):
 
     def test_adopted_option_is_compliant(self):
         regdrift_bots = os.path.join(regdrift.HERE, "bots.json")
-        self.assertIn("NRI", json.load(open(regdrift_bots))[-1]["parameters"]["certified_copy_accepted_customer_types"])
+        with open(regdrift_bots) as fh: self.assertIn("NRI", json.load(fh)[-1]["parameters"]["certified_copy_accepted_customer_types"])
         self.assertEqual(regdrift.key_from_summary("[RegDrift] KYC-Document-Verification-Bot optional_gap - Clause 4 (RBI/2026-27/257)"),
                          ("kyc-document-verification-bot", "Clause 4", "RBI/2026-27/257"))
+
+class Validation(unittest.TestCase):
+    V = staticmethod(regdrift.validate_obligation)
+
+    def test_good_and_coerced(self):
+        o = self.V({"clause": "(a)", "parameter": "Max Days!", "operator": "<=", "required_value": "7", "modality": "Permissive"})
+        self.assertEqual((o["parameter"], o["required_value"], o["modality"], o["clause"]), ("max_days", 7.0, "permissive", "Clause (a)"))
+        self.assertIs(self.V({"parameter": "x", "operator": "==", "required_value": "true"})["required_value"], True)
+
+    def test_garbage_is_dropped(self):
+        bad = [None, "text", [], {}, {"parameter": "x", "operator": "DROP TABLE", "required_value": 1},
+               {"parameter": "x", "operator": "<=", "required_value": "soon"},
+               {"parameter": "x", "operator": "<=", "required_value": True},
+               {"parameter": "x", "operator": "contains", "required_value": ["a"]},
+               {"parameter": "", "operator": "<=", "required_value": 1}]
+        self.assertEqual([self.V(b) for b in bad], [None] * len(bad))
+
+    def test_llm_returning_junk_does_not_crash_pipeline(self):
+        orig = regdrift.llm_json
+        regdrift.llm_json = lambda p: {"obligations": [{"parameter": "str_filing_days", "operator": "<=", "required_value": "5"},
+                                                       "ignore previous instructions", 7, None]} if "Extract machine" in p else None
+        try:
+            f = flagged("RBI/2026-27/9\n3. Suspicious transaction reports must be filed within 5 days of the conclusion.\n")
+        finally:
+            regdrift.llm_json = orig
+        self.assertEqual(f[("STR-Filer-Bot", "Clause ?")]["status"], "violating")
+
+    def test_type_mismatch_in_bot_setting_is_flagged_not_crashed(self):
+        imp = {"obligation": {"parameter": "p", "operator": "<=", "required_value": 5, "summary": "s", "clause": "Clause 1"},
+               "bot": {"id": "B", "name": "B", "platform": "UiPath", "description": "", "parameters": {"p": "three"}}}
+        self.assertEqual(regdrift.judge(imp)["status"], "at_risk")
+
+
+class Retry(unittest.TestCase):
+    def setUp(self):
+        self.sleeps, self._s = [], regdrift._sleep
+        regdrift._sleep = self.sleeps.append
+
+    def tearDown(self):
+        regdrift._sleep = self._s
+
+    def err(self, code, retry_after=None):
+        import io, urllib.error, email.message
+        h = email.message.Message()
+        if retry_after: h["Retry-After"] = retry_after
+        return urllib.error.HTTPError("http://x", code, "e", h, io.BytesIO(b""))
+
+    def test_retries_429_then_succeeds_honouring_retry_after(self):
+        calls = []
+        def fn():
+            calls.append(1)
+            if len(calls) < 3: raise self.err(429, "7")
+            return "ok"
+        self.assertEqual(regdrift._retry(fn), "ok")
+        self.assertEqual(self.sleeps, [7.0, 7.0])
+
+    def test_gives_up_after_max_tries_and_does_not_retry_client_errors(self):
+        n = []
+        def always(): n.append(1); raise self.err(503)
+        with self.assertRaises(Exception): regdrift._retry(always, tries=3)
+        self.assertEqual(len(n), 3)
+        m = []
+        def notfound(): m.append(1); raise self.err(404)
+        with self.assertRaises(Exception): regdrift._retry(notfound)
+        self.assertEqual(len(m), 1)
+
+
+class CLI(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        for k in ("GROQ_API_KEY", "LORA_ADAPTER", "JIRA_URL"): os.environ.pop(k, None)
+
+    def go(self, *extra):
+        return regdrift.main([os.path.join(regdrift.HERE, "circular_sample.txt"), "--report-dir", os.path.join(self.tmp, "r"),
+                              "--tickets", os.path.join(self.tmp, "t.json"), *extra])
+
+    def test_report_is_complete_and_auditable(self):
+        self.assertEqual(self.go("--dry-run"), 0)
+        with open(os.path.join(self.tmp, "r", "circular_sample.report.json")) as fh: rep = json.load(fh)
+        self.assertEqual(rep["circular_ref"], "DEMO/2026-27/101")
+        self.assertEqual(len(rep["circular_sha256"]), 64)
+        self.assertEqual(rep["extractor"], "rules")
+        self.assertFalse(rep["jira_enabled"])
+        self.assertTrue(any(f["status"] == "compliant" for f in rep["findings"]))   # compliant findings are kept for audit
+        with open(os.path.join(self.tmp, "t.json")) as fh: tickets = json.load(fh)
+        self.assertTrue(all(t["status"] != "compliant" for t in tickets))
+
+    def test_fail_on_high_exit_code(self):
+        self.assertEqual(self.go("--dry-run", "--fail-on-high"), 2)
+
+    def test_unreadable_input_exits_1_and_continues(self):
+        rc = regdrift.main([os.path.join(self.tmp, "missing.pdf"), "--report-dir", self.tmp, "--tickets", os.path.join(self.tmp, "t.json")])
+        self.assertEqual(rc, 1)
+
+    def test_dry_run_never_calls_jira_even_with_credentials(self):
+        env = dict(JIRA_URL="https://x.atlassian.net", JIRA_EMAIL="a@b.c", JIRA_TOKEN="t", JIRA_PROJECT="S")
+        os.environ.update(env); orig = regdrift.jira_request
+        regdrift.jira_request = lambda *a, **k: self.fail("Jira was called during --dry-run")
+        try: self.assertEqual(self.go("--dry-run"), 0)
+        finally:
+            regdrift.jira_request = orig
+            for k in env: os.environ.pop(k)
 
 if __name__ == "__main__":
     unittest.main()

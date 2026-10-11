@@ -1,27 +1,124 @@
 # RegDrift
-Self-healing compliance layer: reads a regulator circular (txt/PDF/URL), finds which RPA bots (UiPath / Blue Prism style) it affects, and files Jira tickets. Reviewer decisions become LoRA training data.
 
-Pipeline (LangGraph): ingest -> obligation extraction -> RAG impact analysis (ChromaDB) -> gap reasoning -> Jira -> human review -> LoRA retrain.
+![tests](https://github.com/Ajitesh1234/RegDrift/actions/workflows/run.yml/badge.svg)
 
-## Run (no local install)
-- Colab: `RegDrift_Colab.ipynb` (pipeline), `RegDrift_LoRA_Train.ipynb` (fine-tune, T4 GPU).
-- GitHub Actions: Actions > "RegDrift run" > Run workflow (runs tests + pipeline, uploads tickets.json).
-- Optional secrets: GROQ_API_KEY, JIRA_URL, JIRA_EMAIL, JIRA_TOKEN, JIRA_PROJECT, LORA_ADAPTER.
-  Without them it runs offline in dry-run mode.
+**When a regulator publishes a new circular, which of your automated workflows just became non-compliant?**
+RegDrift reads RBI circulars, extracts the checkable rules, finds the RPA bots (UiPath / Blue Prism style) they affect,
+compares each rule with the bot's real settings, and files de-duplicated Jira tickets with severity and the exact clause.
 
-## Commands
-    python regdrift.py circular.pdf          # or a .txt or an https:// link to a circular
-    python review.py                         # approve/reject tickets -> data/feedback.jsonl
-    python build_lora_data.py                # seed + feedback -> data/train.jsonl
-    python -m unittest -v tests/test_pipeline.py
+Banks run hundreds of bots (KYC, loan processing, reconciliation). Nobody tells bot owners when a circular changes a
+limit or a deadline, so gaps are found in audits, months later. RegDrift turns that into a ticket the same day.
 
-## Honest limits
-- Sample circular and bots are synthetic demo data. Seed LoRA examples (13) are hand-written; add real ones.
-- Deterministic checks only work where a bot exposes the rule's parameter; otherwise the LLM or a manual-review flag decides.
-- Blue Prism/UiPath are represented by bot metadata, not live bots.
+## What it produced on two real RBI circulars
 
-RegDrift creates Jira tickets automatically for each non-compliant bot:
-<img width="1447" height="198" alt="image" src="https://github.com/user-attachments/assets/5cf40fc9-61f6-4c3c-b86b-ba95f8328ff4" />
-RegDrift creates Jira tickets automatically for each non-compliant bot:
-<img width="1376" height="148" alt="image" src="https://github.com/user-attachments/assets/87dc4940-97f1-4092-ab6a-cef2301ba317" />
+| Circular | Finding | Severity |
+|---|---|---|
+| RBI/2026-27/291 (FX derivatives) | `FX-Derivative-Booking-Bot` still allows rebooking of cancelled contracts (clause a) | High |
+| | `Hedge-Limit-Checker-Bot` threshold is 100, circular now says 5 (clause c) | High |
+| | `Hedge-Documentation-Bot` does not capture the "not hedged elsewhere" undertaking (clause d) | High |
+| RBI/2026-27/257 (KYC amendment) | `KYC-Document-Verification-Bot` accepts certified copies for NRI/PIO but not the newly permitted FPI | Low (`optional_gap`) |
 
+The second row shows the distinction that matters: the KYC circular says banks **may** do something. A bot that does not
+is not breaking the law, so it gets a *Low optional_gap* ticket, not a *High violation*.
+(The bots are simulated and their settings were written to mirror the circulars. See *Limitations*.)
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Circular PDF / TXT / URL] --> B[1 Ingest<br/>clean text, find circular ref]
+    B --> C[2 Extract obligations<br/>LoRA model -> Groq LLM -> keyword rules]
+    C --> D[3 Impact analysis<br/>exact setting match + ChromaDB RAG]
+    D --> E[4 Gap reasoning<br/>deterministic check, LLM for the rest]
+    E --> F[5 Action<br/>de-duplicated Jira tickets]
+    E --> G[(reports/*.json<br/>audit trail)]
+    F --> H[Human review<br/>review.py]
+    H --> I[labels -> LoRA training data]
+    I --> C
+```
+
+The five steps are a LangGraph graph (with a plain sequential fallback).
+
+**Design decisions worth knowing**
+- **Deterministic before generative.** If a bot exposes the rule's setting (`str_filing_days = 7`), the verdict comes from
+  arithmetic, not an LLM. The LLM only judges bots with no matching setting, and may answer *not applicable*.
+- **Mandatory vs permissive.** `shall/must` rules produce violations; `may` rules produce Low `optional_gap` tickets.
+- **LLM output is untrusted.** Every extracted obligation is schema-validated (operator allow-list, value types);
+  malformed items are dropped and counted. The circular text is fenced as data in the prompt.
+- **Safe to re-run.** Tickets are matched on (bot, clause, circular) against Jira, so repeat runs create nothing new.
+- **Auditable.** Each run writes `reports/<circular>.report.json`: input SHA-256, model used, every obligation, every
+  finding (including compliant ones) and ticket keys.
+- **Resilient.** Rate limits and server errors are retried with backoff; unavailable models are skipped; the pipeline
+  degrades to offline keyword rules rather than failing.
+
+## Run it (no local install needed)
+
+**GitHub Actions:** Actions > *RegDrift* > *Run workflow*. Pick a circular (or the folder `circulars/`), optionally *dry run* /
+*fail on high* (a compliance gate that fails the run on any violation). Reports are uploaded as an artifact.
+**Colab:** open `RegDrift_Colab.ipynb`.
+**Locally:**
+```bash
+pip install -r requirements.txt
+python regdrift.py circulars/rbi_fx_derivatives_2026-10-10.pdf --dry-run
+python -m unittest discover -s tests
+```
+Add free keys to switch on the LLM and Jira (see `.env.example`). With no keys everything still runs offline.
+
+| Command | Purpose |
+|---|---|
+| `python regdrift.py <pdf/txt/url/folder> [--dry-run] [--fail-on-high]` | analyse circulars |
+| `python import_bot.py Config.xlsx --name KYC-Refresh-Bot --description "..."` | add/update a bot from a UiPath `Config.xlsx` (or a Name,Value CSV for other tools) |
+| `python review.py` | approve/reject tickets; labels feed training |
+| `python distill.py` / `review_candidates.py` / `build_lora_data.py` / `train_lora.py` / `evaluate.py` | LoRA pipeline (below) |
+
+## The LoRA extractor (optional)
+
+A small model (Qwen2.5-0.5B-Instruct + LoRA) that turns one clause into structured obligations, so extraction can run
+locally and cheaply instead of calling an LLM.
+
+1. `distill.py`: Groq proposes labels for every clause in `circulars/` (resumable, rate-limit aware).
+2. `review_candidates.py`: **a human accepts, fixes or rejects each one.** Only reviewed rows become training data.
+3. `build_lora_data.py`: builds train/test, **holding out whole circulars** so the test measures generalisation,
+   with leakage and duplicate guards. Fewer than 4 circulars means no test set (it will not fake one).
+4. `train_lora.py`: LoRA fine-tune on a free Colab T4 (loss on the JSON completion only).
+5. `evaluate.py`: keyword baseline vs Groq zero-shot vs the LoRA model on the held-out circulars
+   (detection F1, exact match, content match) -> `docs/eval_results.md`.
+
+Run it all from `RegDrift_LoRA_Train.ipynb`.
+
+### Results
+<!-- Paste docs/eval_results.md here after running evaluate.py. Report what you measured, including if the LoRA model
+     trails Groq: a small local model that is close to a large API model is still a useful result. -->
+_Not yet measured. Run the notebook, then paste the table here._
+
+## Project layout
+```
+regdrift.py            pipeline + CLI (LangGraph graph, validation, retries, Jira, reports)
+import_bot.py          UiPath Config.xlsx / CSV -> bots.json
+review.py              human review of tickets
+distill.py  review_candidates.py  build_lora_data.py  train_lora.py  evaluate.py   LoRA pipeline
+bots.json              demo bots (simulated)        circulars/   real circular PDFs
+data/seed_examples.jsonl   hand-written training seeds     tests/   unit tests (run in CI)
+RegDrift_Colab.ipynb  RegDrift_LoRA_Train.ipynb  .github/workflows/run.yml  .env.example
+```
+
+## Limitations (read before relying on it)
+- **The bots are simulated.** Their settings were written by hand to mirror the test circulars, so the headline results
+  show the pipeline works, not that it generalises to your bank's automations. Test it on circulars you did not design for.
+- **Bot ingestion.** `import_bot.py` reads the UiPath REFramework `Config.xlsx` layout (Name/Value/Description sheets) and
+  generic Name,Value CSVs; it was tested on generated files, not a real production export. It does not parse Blue Prism
+  release files; export the bot's environment variables to CSV instead.
+- **Extraction can be wrong.** LLM and LoRA output is validated for shape, not truth. Tickets are for a human to confirm.
+- **Rules need a matching setting.** If a bot's behaviour is not exposed as a setting, RegDrift can only flag it
+  *at risk* for manual review.
+- **Scanned PDFs** (images) need OCR first; text-based PDFs only.
+- **Free tiers:** Groq rate limits apply (handled with backoff); Colab sessions disconnect (progress is saved to Drive).
+- **LoRA quality scales with reviewed data.** A few dozen examples gives a proof of concept, not a production model.
+- Not legal or compliance advice. Always confirm circulars at rbi.org.in.
+
+## Security
+Secrets come from environment variables / repository secrets only and are never logged or committed
+(`.env` is git-ignored). The workflow passes inputs through environment variables, not shell interpolation.
+
+## License
+MIT. See `LICENSE`.
