@@ -127,8 +127,12 @@ def ingest(state: State) -> State:
 # ---------- Node 2: obligation extractor ----------
 PROMPT_EXTRACT = """Extract machine-checkable obligations from this regulatory text.
 Return ONLY a JSON list. Each item: {{"clause": str (e.g. "Clause (a)"), "summary": str (one sentence),
-"parameter": snake_case name, "operator": "<=", ">=" or "==", "required_value": number or true/false, "unit": str}}.
+"parameter": snake_case name, "operator": "<=", ">=", "==" or "contains",
+"required_value": number, true/false, or (for "contains") a string, "unit": str,
+"modality": "mandatory" or "permissive"}}.
 Use "==" with true/false for yes/no rules (e.g. a thing must or must not be allowed/captured).
+Use "contains" when a bot setting is a list and the circular adds an item that list should now include.
+modality is "mandatory" for shall/must/not permitted, and "permissive" for may/is permitted/allowed.
 Where the rule concerns one of these existing bot settings, reuse that exact parameter name:
 {params}
 If the circular changes an old limit to a new one, use the NEW value. Skip clauses with no checkable rule.
@@ -233,7 +237,8 @@ Bot: {bot} ({platform}) - {desc}
 Bot parameters: {params}
 First decide if this rule concerns what the bot actually does. If the bot's job is unrelated to the
 rule, answer not_applicable. Otherwise judge compliance. Return ONLY JSON:
-{{"status": "not_applicable"|"compliant"|"at_risk"|"violating", "confidence": 0-1, "reason": str}}"""
+{{"status": "not_applicable"|"compliant"|"at_risk"|"violating"|"optional_gap", "confidence": 0-1, "reason": str}}
+(optional_gap = the rule only permits something and the bot does not use it yet; it is not a breach)"""
 
 def judge(imp):
     ob, bot = imp["obligation"], imp["bot"]
@@ -241,12 +246,17 @@ def judge(imp):
     if param in bot["parameters"]:  # deterministic check on structured data first
         cur, req = bot["parameters"][param], ob["required_value"]
         op = ob["operator"]
-        ok = cur <= req if op == "<=" else cur >= req if op == ">=" else cur == req
-        return {"status": "compliant" if ok else "violating", "confidence": 0.95,
-                "reason": " ".join(f"{param} is {cur} {ob.get('unit') or ''}, rule requires {op} {req}.".split()).replace(" ,", ",")}
+        if op == "contains":
+            items = cur if isinstance(cur, list) else [cur]
+            ok = str(req).strip().lower() in [str(x).strip().lower() for x in items]
+        else:
+            ok = cur <= req if op == "<=" else cur >= req if op == ">=" else cur == req
+        status = "compliant" if ok else ("optional_gap" if ob.get("modality") == "permissive" else "violating")
+        return {"status": status, "confidence": 0.95,
+                "reason": " ".join(f"{param} is {cur} {ob.get('unit') or ''}, rule {'now permits' if ob.get('modality') == 'permissive' else 'requires'} {op} {req}.".split()).replace(" ,", ",")}
     r = llm_json(PROMPT_REASON.format(rule=ob["summary"], bot=bot["name"], platform=bot["platform"],
                                       desc=bot["description"], params=bot["parameters"]))
-    if isinstance(r, dict) and r.get("status") in ("not_applicable", "compliant", "at_risk", "violating"):
+    if isinstance(r, dict) and r.get("status") in ("not_applicable", "compliant", "at_risk", "violating", "optional_gap"):
         return r
     return {"status": "at_risk", "confidence": 0.5,
             "reason": f"Bot touches this area but exposes no '{param}' setting; needs manual review."}
@@ -265,7 +275,7 @@ def reason(state: State) -> State:
     return {"findings": findings}
 
 # ---------- Node 5: action agent (Jira) ----------
-SEVERITY = {"violating": "High", "at_risk": "Medium"}
+SEVERITY = {"violating": "High", "at_risk": "Medium", "optional_gap": "Low"}
 
 def jira_ready():
     return all(os.getenv(k) for k in ("JIRA_URL", "JIRA_EMAIL", "JIRA_TOKEN", "JIRA_PROJECT"))
@@ -281,7 +291,7 @@ def ticket_summary(f):
     ref = f" ({f['ref']})" if f.get("ref") else ""
     return f"[RegDrift] {f['bot']} {f['status']} - {f['clause']}{ref}"
 
-SUMMARY_RE = re.compile(r"^\[RegDrift\]\s+(.+?)\s+(?:violating|at_risk)\s+-\s+(.+?)(?:\s+\(([^()]*/[^()]*)\))?$")
+SUMMARY_RE = re.compile(r"^\[RegDrift\]\s+(.+?)\s+(?:violating|at_risk|optional_gap)\s+-\s+(.+?)(?:\s+\(([^()]*/[^()]*)\))?$")
 
 def ticket_key(bot, clause, ref):
     return (str(bot).strip().lower(), norm_clause(clause), (ref or "").strip())
