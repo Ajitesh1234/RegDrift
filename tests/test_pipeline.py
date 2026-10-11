@@ -144,5 +144,39 @@ class GroqModelFallback(unittest.TestCase):
         self.assertEqual(tried[:3], ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile"])
         self.assertEqual(tried[3], "llama-3.3-70b-versatile")   # second call goes straight to the working model
 
+class ClauseLabels(unittest.TestCase):
+    def test_norm_clause(self):
+        n = regdrift.norm_clause
+        self.assertEqual({n("(a)"), n("a"), n("Clause (a)"), n("Paragraph (a)"), n(" clause a. ")}, {"Clause (a)"})
+        self.assertEqual({n("3"), n("Clause 3"), n("Para 3."), n("Paragraph 3")}, {"Clause 3"})
+
+    def test_dedupe_survives_llm_relabelling_and_status_change(self):
+        created, existing = [], []
+        def fake(path, body=None):
+            if path.startswith("/rest/api/3/search/jql"):
+                return {"issues": [{"fields": {"summary": s}} for s in existing], "isLast": True}
+            created.append(body["fields"]["summary"]); existing.append(body["fields"]["summary"])
+            return {"key": f"SCRUM-{len(created)}"}
+        label = {"v": "(a)"}
+        orig_llm, orig_req = regdrift.llm_json, regdrift.jira_request
+        def stub(p):
+            if "Extract machine-checkable" not in p: return None
+            return [{"clause": label["v"], "summary": "no rebooking", "parameter": "allow_rebook_cancelled_contracts",
+                     "operator": "==", "required_value": False, "unit": ""}]
+        env = dict(JIRA_URL="https://x.atlassian.net", JIRA_EMAIL="a@b.c", JIRA_TOKEN="t", JIRA_PROJECT="SCRUM")
+        os.environ.update(env); regdrift.llm_json = stub; regdrift.jira_request = fake
+        text = "RBI/2026-27/291\n(a) An Authorised Dealer shall not permit rebooking of cancelled contracts.\n"
+        try:
+            regdrift.run({"circular_text": text}); first = len(created)
+            label["v"] = "Clause (a)"                      # LLM words the label differently on the next run
+            regdrift.run({"circular_text": text}); second = len(created) - first
+        finally:
+            regdrift.llm_json, regdrift.jira_request = orig_llm, orig_req
+            for k in env: os.environ.pop(k)
+        self.assertEqual((first, second), (1, 0))
+        # tickets created by an older version of the code (no 'Clause' prefix) are still recognised
+        self.assertEqual(regdrift.key_from_summary("[RegDrift] FX-Bot violating - (a) (RBI/2026-27/291)"),
+                         regdrift.key_from_summary("[RegDrift] FX-Bot at_risk - Clause (a) (RBI/2026-27/291)"))
+
 if __name__ == "__main__":
     unittest.main()
