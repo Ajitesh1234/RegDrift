@@ -1,10 +1,15 @@
 name: RegDrift run
 on:
-  workflow_dispatch:
-  push:
-    paths: ["circulars/**", "bots.json", "regdrift.py"]
+  workflow_dispatch:          # pipeline runs ONLY when you click "Run workflow"
+    inputs:
+      circular:
+        description: "Path to circular (.pdf or .txt) in the repo"
+        default: "circulars/rbi_fx_derivatives_2026-10-10.pdf"
+  push:                       # pushes only run the tests (no Jira tickets)
+    paths: ["**.py", "bots.json", "requirements.txt", ".github/workflows/run.yml"]
+
 jobs:
-  run:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -12,7 +17,17 @@ jobs:
         with: { python-version: "3.11" }
       - run: pip install -r requirements.txt reportlab
       - run: python -m unittest -v tests/test_pipeline.py
-      - run: python regdrift.py circulars/rbi_fx_derivatives_2026-10-10.pdf
+
+  run:
+    needs: test
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - run: python regdrift.py "${{ github.event.inputs.circular }}"
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           JIRA_URL: ${{ secrets.JIRA_URL }}
