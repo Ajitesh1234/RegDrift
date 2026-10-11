@@ -20,31 +20,43 @@ class State(TypedDict, total=False):
     tickets: List[Dict[str, Any]]
 
 # ---------- LLM helper (Groq free tier, OpenAI-compatible) ----------
+GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3.8-27b"]
+_groq = {}
+
+def _groq_chat(key, model, prompt):
+    body = json.dumps({"model": model, "temperature": 0,
+                       "messages": [{"role": "user", "content": prompt}]}).encode()
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions", body,
+        {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+         "User-Agent": "regdrift/1.0 (+https://github.com/Ajitesh1234/RegDrift)", "Accept": "application/json"})
+    out = json.load(urllib.request.urlopen(req, timeout=90))
+    return out["choices"][0]["message"]["content"]
+
 def llm_json(prompt: str):
+    """Ask Groq (free tier) for JSON. Tries several models; uses the first your account can access."""
     key = os.getenv("GROQ_API_KEY")
     if not key:
         return None
-    try:
-        body = json.dumps({
-            "model": os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
-            "temperature": 0,
-            "messages": [{"role": "user", "content": prompt}],
-        }).encode()
-        req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/chat/completions", body,
-            {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-             "User-Agent": "regdrift/1.0 (+https://github.com/Ajitesh1234/RegDrift)", "Accept": "application/json"})
-        out = json.load(urllib.request.urlopen(req, timeout=60))
-        text = out["choices"][0]["message"]["content"]
-        m = re.search(r"(\[.*\]|\{.*\})", text, re.S)
-        return json.loads(m.group(1)) if m else None
-    except Exception as e:
-        body = ""
-        if hasattr(e, "read"):
-            try: body = " | " + e.read().decode("utf-8", "ignore")[:300]
-            except Exception: pass
-        print(f"  [llm failed, using fallback: {e}{body}]")
-        return None
+    models = [os.getenv("GROQ_MODEL")] if os.getenv("GROQ_MODEL") else ([_groq["model"]] if "model" in _groq else GROQ_MODELS)
+    for model in models:
+        try:
+            text = _groq_chat(key, model, prompt)
+            _groq["model"] = model
+            m = re.search(r"(\[.*\]|\{.*\})", text, re.S)
+            return json.loads(m.group(1)) if m else None
+        except Exception as e:
+            body = ""
+            if hasattr(e, "read"):
+                try: body = e.read().decode("utf-8", "ignore")[:300]
+                except Exception: pass
+            if getattr(e, "code", None) in (400, 403, 404) and "model" in body.lower() and len(models) > 1:
+                print(f"  [groq model {model} unavailable, trying next]")
+                continue
+            print(f"  [llm failed, using fallback: {e} | {body}]")
+            return None
+    print("  [llm failed: no Groq model was available to this key]")
+    return None
 
 # ---------- Optional: your LoRA-tuned extractor (set LORA_ADAPTER=path_or_hf_id) ----------
 _lora = {}
