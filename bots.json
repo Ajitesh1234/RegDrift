@@ -103,5 +103,25 @@
       "capture_hedge_undertaking": false,
       "record_retention_years": 5
     }
+  },
+  {
+    "id": "BOT-008",
+    "name": "KYC-Document-Verification-Bot",
+    "platform": "UiPath",
+    "description": "Verifies identity documents during account opening and accepts overseas-certified copies for non-resident customers.",
+    "tags": [
+      "kyc",
+      "certified copy",
+      "nri",
+      "pio",
+      "document verification",
+      "onboarding"
+    ],
+    "parameters": {
+      "certified_copy_accepted_customer_types": [
+        "NRI",
+        "PIO"
+      ]
+    }
   }
 ]
