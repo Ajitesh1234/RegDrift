@@ -13,6 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 class State(TypedDict, total=False):
     circular_text: str
+    circular_ref: str
     obligations: List[Dict[str, Any]]
     impacts: List[Dict[str, Any]]
     findings: List[Dict[str, Any]]
@@ -31,13 +32,18 @@ def llm_json(prompt: str):
         }).encode()
         req = urllib.request.Request(
             "https://api.groq.com/openai/v1/chat/completions", body,
-            {"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+            {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+             "User-Agent": "regdrift/1.0 (+https://github.com/Ajitesh1234/RegDrift)", "Accept": "application/json"})
         out = json.load(urllib.request.urlopen(req, timeout=60))
         text = out["choices"][0]["message"]["content"]
         m = re.search(r"(\[.*\]|\{.*\})", text, re.S)
         return json.loads(m.group(1)) if m else None
     except Exception as e:
-        print(f"  [llm failed, using fallback: {e}]")
+        body = ""
+        if hasattr(e, "read"):
+            try: body = " | " + e.read().decode("utf-8", "ignore")[:300]
+            except Exception: pass
+        print(f"  [llm failed, using fallback: {e}{body}]")
         return None
 
 # ---------- Optional: your LoRA-tuned extractor (set LORA_ADAPTER=path_or_hf_id) ----------
@@ -101,8 +107,10 @@ def clean(text: str) -> str:
 def ingest(state: State) -> State:
     text = state.get("circular_text") or open(os.path.join(HERE, "circular_sample.txt"), encoding="utf-8").read()
     text = clean(text)
+    m = re.search(r"\b[A-Z]{3,4}/\d{4}-\d{2,4}/\d+", text)
+    ref = m.group(0) if m else ""
     print(f"[1/5] Ingested circular ({len(text)} chars)")
-    return {"circular_text": text}
+    return {"circular_text": text, "circular_ref": ref}
 
 # ---------- Node 2: obligation extractor ----------
 PROMPT_EXTRACT = """Extract machine-checkable obligations from this regulatory text.
@@ -231,41 +239,73 @@ def reason(state: State) -> State:
             continue
         findings.append({"bot_id": imp["bot"]["id"], "bot": imp["bot"]["name"],
                          "platform": imp["bot"]["platform"], "clause": imp["obligation"]["clause"],
-                         "rule": imp["obligation"]["summary"], "obligation": imp["obligation"], **j})
+                         "rule": imp["obligation"]["summary"], "obligation": imp["obligation"], "ref": state.get("circular_ref", ""), **j})
     print(f"[4/5] Judged {len(findings)} findings")
     return {"findings": findings}
 
 # ---------- Node 5: action agent (Jira) ----------
 SEVERITY = {"violating": "High", "at_risk": "Medium"}
 
+def jira_ready():
+    return all(os.getenv(k) for k in ("JIRA_URL", "JIRA_EMAIL", "JIRA_TOKEN", "JIRA_PROJECT"))
+
+def jira_request(path, body=None):
+    url, email, tok_ = (os.getenv(k) for k in ("JIRA_URL", "JIRA_EMAIL", "JIRA_TOKEN"))
+    req = urllib.request.Request(url.rstrip("/") + path, json.dumps(body).encode() if body else None, {
+        "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "regdrift/1.0",
+        "Authorization": "Basic " + base64.b64encode(f"{email}:{tok_}".encode()).decode()})
+    return json.load(urllib.request.urlopen(req, timeout=30))
+
+def ticket_summary(f):
+    ref = f" ({f['ref']})" if f.get("ref") else ""
+    return f"[RegDrift] {f['bot']} {f['status']} - {f['clause']}{ref}"
+
+def jira_existing():
+    """Summaries of RegDrift tickets already in the project (so re-runs do not create duplicates)."""
+    from urllib.parse import quote
+    jql = quote(f'project = "{os.getenv("JIRA_PROJECT")}" AND summary ~ "RegDrift"')
+    found, token = set(), ""
+    for _ in range(10):
+        r = jira_request(f"/rest/api/3/search/jql?jql={jql}&fields=summary&maxResults=100" + (f"&nextPageToken={token}" if token else ""))
+        found |= {i["fields"]["summary"] for i in r.get("issues", [])}
+        token = r.get("nextPageToken", "")
+        if not token or r.get("isLast"): break
+    return found
+
 def jira_create(f):
-    url, email, tok_, proj = (os.getenv(k) for k in ("JIRA_URL", "JIRA_EMAIL", "JIRA_TOKEN", "JIRA_PROJECT"))
     text = (f"{f['clause']}: {f['rule']}\n\nStatus: {f['status']} (confidence {f['confidence']})\n"
-            f"Reason: {f['reason']}\nBot: {f['bot']} [{f['platform']}]")
-    body = {"fields": {"project": {"key": proj}, "issuetype": {"name": "Task"},
-            "summary": f"[RegDrift] {f['bot']} {f['status']} - {f['clause']}",
+            f"Reason: {f['reason']}\nBot: {f['bot']} [{f['platform']}]\nCircular: {f.get('ref') or 'n/a'}")
+    body = {"fields": {"project": {"key": os.getenv("JIRA_PROJECT")}, "issuetype": {"name": "Task"},
+            "summary": ticket_summary(f), "labels": ["regdrift"],
             "description": {"type": "doc", "version": 1, "content": [
                 {"type": "paragraph", "content": [{"type": "text", "text": text}]}]}}}
-    req = urllib.request.Request(f"{url}/rest/api/3/issue", json.dumps(body).encode(), {
-        "Content-Type": "application/json",
-        "Authorization": "Basic " + base64.b64encode(f"{email}:{tok_}".encode()).decode()})
-    return json.load(urllib.request.urlopen(req, timeout=30))["key"]
+    return jira_request("/rest/api/3/issue", body)["key"]
 
 def act(state: State) -> State:
-    tickets = []
-    live = all(os.getenv(k) for k in ("JIRA_URL", "JIRA_EMAIL", "JIRA_TOKEN", "JIRA_PROJECT"))
+    tickets, live, existing = [], jira_ready(), set()
+    if live:
+        try:
+            existing = jira_existing()
+        except Exception as e:
+            print(f"  [could not check Jira for existing tickets, duplicates possible: {e}]")
     for f in state["findings"]:
         if f["status"] == "compliant":
             continue
         t = {"severity": SEVERITY[f["status"]], **f, "decision": None}
-        try:
-            t["jira_key"] = jira_create(f) if live else "DRY-RUN"
-        except Exception as e:
-            t["jira_key"] = f"FAILED: {e}"
+        if live and ticket_summary(f) in existing:
+            t["jira_key"] = "SKIPPED (already in Jira)"
+        else:
+            try:
+                t["jira_key"] = jira_create(f) if live else "DRY-RUN"
+            except Exception as e:
+                t["jira_key"] = f"FAILED: {e}"
         tickets.append(t)
     with open(os.path.join(HERE, "tickets.json"), "w") as fh:
         json.dump(tickets, fh, indent=2)
-    print(f"[5/5] Created {len(tickets)} tickets ({'Jira' if live else 'dry-run, saved to tickets.json'})")
+    new = sum(1 for t in tickets if t["jira_key"] not in ("DRY-RUN",) and not t["jira_key"].startswith(("SKIPPED", "FAILED")))
+    skipped = sum(1 for t in tickets if t["jira_key"].startswith("SKIPPED"))
+    print(f"[5/5] {len(tickets)} findings: {new} new Jira tickets, {skipped} already existed" if live
+          else f"[5/5] {len(tickets)} findings (dry-run, saved to tickets.json)")
     return {"tickets": tickets}
 
 # ---------- Graph ----------
