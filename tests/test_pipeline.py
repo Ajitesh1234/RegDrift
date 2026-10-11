@@ -340,3 +340,20 @@ class Dashboard(unittest.TestCase):
         self.assertIn("&lt;b&gt;Bot&lt;/b&gt;", out)
         self.assertNotIn("<b>Bot</b>", out)
         self.assertIn("bad &amp; wrong", out)
+
+
+class LlmVerdictCap(unittest.TestCase):
+    def test_llm_only_violation_is_capped_at_risk(self):
+        bot = {"id": "B", "name": "B", "platform": "UiPath", "description": "checks limits", "tags": [],
+               "parameters": {"other_setting": 1}}
+        ob = {"clause": "Clause (d)", "summary": "obtain undertaking", "parameter": "capture_hedge_undertaking",
+              "operator": "==", "required_value": True, "unit": "", "modality": "mandatory"}
+        orig = regdrift.llm_json
+        regdrift.llm_json = lambda p: {"status": "violating", "confidence": 0.99, "reason": "does not collect it"}
+        try:
+            r = regdrift.judge({"obligation": ob, "bot": bot})
+        finally:
+            regdrift.llm_json = orig
+        self.assertEqual(r["status"], "at_risk")
+        self.assertIn("Unconfirmed", r["reason"])
+        self.assertLessEqual(r["confidence"], 0.7)

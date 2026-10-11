@@ -233,6 +233,8 @@ Use "contains" when a bot setting is a list and the circular adds an item that l
 modality is "mandatory" for shall/must/not permitted, and "permissive" for may/is permitted/allowed.
 Where the rule concerns one of these existing bot settings, reuse that exact parameter name:
 {params}
+Use "<=" for maximums ("not exceed", "up to", "within", "not more than"), ">=" for minimums ("at least", "not less than"),
+and "==" only for exact values or yes/no rules.
 If the circular changes an old limit to a new one, use the NEW value. Skip clauses with no checkable rule.
 <circular>
 {text}
@@ -246,6 +248,8 @@ Return ONLY a JSON list, or [] if the clause states no checkable rule. Each item
 "modality": "mandatory" or "permissive"}}.
 "==" with true/false is for yes/no rules; "contains" is for a bot setting that is a list the clause adds an item to.
 modality is "mandatory" for shall/must/not permitted, and "permissive" for may/is permitted/allowed.
+Use "<=" for maximums ("not exceed", "up to", "within", "not more than"), ">=" for minimums ("at least", "not less than"),
+and "==" only for exact values or yes/no rules.
 If the clause changes an old limit to a new one, use the NEW value.
 Where the rule concerns one of these existing bot settings, reuse that exact parameter name:
 {params}
@@ -500,7 +504,12 @@ def judge(imp):
             conf = max(0.0, min(1.0, float(r.get("confidence", 0.5))))
         except (TypeError, ValueError):
             conf = 0.5
-        return {"status": r["status"], "confidence": conf, "reason": str(r.get("reason", ""))[:500]}
+        status, why = r["status"], str(r.get("reason", ""))[:500]
+        if status == "violating":
+            # A High needs evidence from a structured bot setting. An LLM reading only a description
+            # is a guess, so it is capped at Medium for a human to confirm.
+            status, why = "at_risk", "Unconfirmed (no matching bot setting): " + why
+        return {"status": status, "confidence": min(conf, 0.7), "reason": why[:500]}
     return {"status": "at_risk", "confidence": 0.5,
             "reason": f"Bot touches this area but exposes no '{param}' setting; needs manual review."}
 
