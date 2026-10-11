@@ -142,6 +142,13 @@ FALLBACK_RULES = [
     (r"sanctions", "sanctions_screening_frequency_days", "<=", "days"),
 ]
 
+def norm_clause(label) -> str:
+    """'(a)', 'a', 'Clause (a)', 'Paragraph 3', 'para 3.' -> 'Clause (a)' / 'Clause 3' (stable across runs)."""
+    core = re.sub(r"(?i)^\s*(sub-?clause|clause|paragraph|para|section)\s*", "", str(label or "")).strip(" .:")
+    if re.fullmatch(r"[A-Za-z]", core):
+        core = f"({core.lower()})"
+    return f"Clause {core}" if core else "Clause ?"
+
 def known_params():
     with open(os.path.join(HERE, "bots.json")) as fh:
         return sorted({p for b in json.load(fh) for p in b["parameters"]})
@@ -165,6 +172,8 @@ def extract(state: State) -> State:
                         obs.append({"clause": clause, "summary": body, "parameter": param,
                                     "operator": op, "required_value": float(nums[-1]), "unit": unit})
                     break
+    for o in obs:
+        o["clause"] = norm_clause(o.get("clause"))
     print(f"[2/5] Extracted {len(obs)} measurable obligations")
     return {"obligations": obs}
 
@@ -272,14 +281,23 @@ def ticket_summary(f):
     ref = f" ({f['ref']})" if f.get("ref") else ""
     return f"[RegDrift] {f['bot']} {f['status']} - {f['clause']}{ref}"
 
+SUMMARY_RE = re.compile(r"^\[RegDrift\]\s+(.+?)\s+(?:violating|at_risk)\s+-\s+(.+?)(?:\s+\(([^()]*/[^()]*)\))?$")
+
+def ticket_key(bot, clause, ref):
+    return (str(bot).strip().lower(), norm_clause(clause), (ref or "").strip())
+
+def key_from_summary(summary):
+    m = SUMMARY_RE.match(summary.strip())
+    return ticket_key(m.group(1), m.group(2), m.group(3)) if m else None
+
 def jira_existing():
-    """Summaries of RegDrift tickets already in the project (so re-runs do not create duplicates)."""
+    """Keys (bot, clause, circular) of RegDrift tickets already in the project, so re-runs do not duplicate."""
     from urllib.parse import quote
     jql = quote(f'project = "{os.getenv("JIRA_PROJECT")}" AND summary ~ "RegDrift"')
     found, token = set(), ""
     for _ in range(10):
         r = jira_request(f"/rest/api/3/search/jql?jql={jql}&fields=summary&maxResults=100" + (f"&nextPageToken={token}" if token else ""))
-        found |= {i["fields"]["summary"] for i in r.get("issues", [])}
+        found |= {k for i in r.get("issues", []) if (k := key_from_summary(i["fields"]["summary"]))}
         token = r.get("nextPageToken", "")
         if not token or r.get("isLast"): break
     return found
@@ -298,13 +316,14 @@ def act(state: State) -> State:
     if live:
         try:
             existing = jira_existing()
+            print(f"  [found {len(existing)} existing RegDrift tickets in Jira]")
         except Exception as e:
             print(f"  [could not check Jira for existing tickets, duplicates possible: {e}]")
     for f in state["findings"]:
         if f["status"] == "compliant":
             continue
         t = {"severity": SEVERITY[f["status"]], **f, "decision": None}
-        if live and ticket_summary(f) in existing:
+        if live and ticket_key(f["bot"], f["clause"], f.get("ref")) in existing:
             t["jira_key"] = "SKIPPED (already in Jira)"
         else:
             try:
