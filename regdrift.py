@@ -355,6 +355,43 @@ def canon_obligation(o) -> Dict[str, Any]:
     return {k: v[k] for k in LABEL_KEYS}
 
 
+CHANGE_CUE = re.compile(r"(?i)\b(henceforth|hereafter|shall now be|now be|revised to|reduced to|enhanced to|increased to|"
+                        r"brought down to|lowered to|raised to)\b[^.\d]{0,60}?(?:usd|us\$|rs\.?|inr|\u20b9)?\s*(\d[\d,]*(?:\.\d+)?)")
+NUM_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def _num(s):
+    try:
+        return float(s.replace(",", ""))
+    except ValueError:
+        return None
+
+
+def fix_changed_limit(ob, text):
+    """If the clause says an old limit changes to a new one ("... henceforth USD 5 million") but the
+    extractor returned the old number, switch to the new one. LLMs sometimes pick the wrong number."""
+    val = ob.get("required_value")
+    if isinstance(val, bool) or not isinstance(val, (int, float)):
+        return ob
+    starts = [(m.start(), norm_clause(f"Clause {m.group(1) or m.group(2)}")) for m in CLAUSE_RE.finditer(text)]
+    body = None
+    for i, (pos, label) in enumerate(starts):  # whole clause = from its start to the next clause's start
+        if label == ob["clause"]:
+            body = text[pos:starts[i + 1][0] if i + 1 < len(starts) else len(text)]
+            break
+    if body is None:  # clause not locatable: do not guess
+        return ob
+    cue = CHANGE_CUE.search(body)
+    if not cue:
+        return ob
+    new = _num(cue.group(2))
+    olds = {_num(n) for n in NUM_RE.findall(body[:cue.start()])}
+    if new is not None and new != val and val in olds:
+        log.info("  [%s: extractor used old value %s, circular says it is now %s; corrected]", ob["clause"], val, cue.group(2))
+        return {**ob, "required_value": int(new) if float(new).is_integer() else new}
+    return ob
+
+
 def extract(state: State) -> State:
     text, raw, backend = state["circular_text"], [], "rules"
     if os.getenv("LORA_ADAPTER"):
@@ -375,6 +412,7 @@ def extract(state: State) -> State:
         for clause, body in iter_clauses(text):
             raw += [{**o, "clause": clause, "summary": body} for o in rules_extract_clause(body)]
     obs = [v for o in raw if (v := validate_obligation(o))]
+    obs = [fix_changed_limit(o, text) for o in obs]
     if len(obs) < len(raw):
         log.warning("  [dropped %d malformed obligation(s) from %s output]", len(raw) - len(obs), backend)
     log.info("[2/5] Extracted %d measurable obligations (%s)", len(obs), backend)

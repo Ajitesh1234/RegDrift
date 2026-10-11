@@ -357,3 +357,26 @@ class LlmVerdictCap(unittest.TestCase):
         self.assertEqual(r["status"], "at_risk")
         self.assertIn("Unconfirmed", r["reason"])
         self.assertLessEqual(r["confidence"], 0.7)
+
+
+class ChangedLimitGuard(unittest.TestCase):
+    TEXT = ("(c) Authorised Dealers may allow positions upto USD 100 million equivalent without underlying. "
+            "The threshold shall, henceforth, be USD 5 million equivalent.\n")
+
+    def ob(self, val):
+        return {"clause": "Clause (c)", "summary": "s", "parameter": "p", "operator": "<=",
+                "required_value": val, "unit": "usd million", "modality": "mandatory"}
+
+    def test_old_value_is_corrected_to_new(self):
+        self.assertEqual(regdrift.fix_changed_limit(self.ob(100), self.TEXT)["required_value"], 5)
+
+    def test_correct_value_untouched(self):
+        self.assertEqual(regdrift.fix_changed_limit(self.ob(5), self.TEXT)["required_value"], 5)
+
+    def test_unrelated_value_untouched(self):
+        self.assertEqual(regdrift.fix_changed_limit(self.ob(42), self.TEXT)["required_value"], 42)
+
+    def test_real_circular(self):
+        t = regdrift.load_text(os.path.join(regdrift.HERE, "circulars", "rbi_fx_derivatives_2026-10-10.pdf"))
+        ob = {**self.ob(100), "clause": "Clause (c)"}
+        self.assertEqual(regdrift.fix_changed_limit(ob, t)["required_value"], 5)
