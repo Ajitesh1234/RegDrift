@@ -159,7 +159,7 @@ def retrieve_bow(bots, query, k):
                     key=lambda x: -x[1])
     return scored[:k]
 
-SIM_THRESHOLD = {"chroma": 0.25, "bow": 0.12}
+SIM_THRESHOLD = {"chroma": float(os.getenv("CHROMA_MIN_SIM", "0.35")), "bow": 0.12}
 
 def retrieve(state: State) -> State:
     with open(os.path.join(HERE, "bots.json")) as fh:
@@ -189,8 +189,9 @@ def retrieve(state: State) -> State:
 PROMPT_REASON = """Rule: {rule}
 Bot: {bot} ({platform}) - {desc}
 Bot parameters: {params}
-Is the bot compliant with the rule? Return ONLY JSON:
-{{"status": "compliant"|"at_risk"|"violating", "confidence": 0-1, "reason": str}}"""
+First decide if this rule concerns what the bot actually does. If the bot's job is unrelated to the
+rule, answer not_applicable. Otherwise judge compliance. Return ONLY JSON:
+{{"status": "not_applicable"|"compliant"|"at_risk"|"violating", "confidence": 0-1, "reason": str}}"""
 
 def judge(imp):
     ob, bot = imp["obligation"], imp["bot"]
@@ -202,7 +203,7 @@ def judge(imp):
                 "reason": f"{param} is {cur} {ob['unit']}, rule requires {ob['operator']} {req:g}."}
     r = llm_json(PROMPT_REASON.format(rule=ob["summary"], bot=bot["name"], platform=bot["platform"],
                                       desc=bot["description"], params=bot["parameters"]))
-    if isinstance(r, dict) and "status" in r:
+    if isinstance(r, dict) and r.get("status") in ("not_applicable", "compliant", "at_risk", "violating"):
         return r
     return {"status": "at_risk", "confidence": 0.5,
             "reason": f"Bot touches this area but exposes no '{param}' setting; needs manual review."}
@@ -211,6 +212,9 @@ def reason(state: State) -> State:
     findings = []
     for imp in state["impacts"]:
         j = judge(imp)
+        if j["status"] == "not_applicable":
+            print(f"  (skipped {imp['bot']['name']} / {imp['obligation']['clause']}: not applicable)")
+            continue
         findings.append({"bot_id": imp["bot"]["id"], "bot": imp["bot"]["name"],
                          "platform": imp["bot"]["platform"], "clause": imp["obligation"]["clause"],
                          "rule": imp["obligation"]["summary"], "obligation": imp["obligation"], **j})
