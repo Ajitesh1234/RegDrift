@@ -123,8 +123,8 @@ RegDrift_Colab.ipynb  RegDrift_LoRA_Train.ipynb  .github/workflows/run.yml  .env
 - **Value matching is heuristic.** List values are compared ignoring case, plurals and acronyms (so "Foreign Portfolio
   Investors" matches `FPI`), but unrelated synonyms (e.g. FII vs FPI) are not matched and would show as a gap.
 - **Extraction can be wrong.** LLM and LoRA output is validated for shape, not truth. Tickets are for a human to confirm.
-- **Rules need a matching setting.** If a bot's behaviour is not exposed as a setting, RegDrift can only flag it
-  *at risk* for manual review.
+- **Rules need a matching setting.** If a rule maps to a setting that some bot owns, only bots with that setting are
+  judged. If no bot owns the setting, related bots are flagged *at risk* (never High) for manual review.
 - **Scanned PDFs** (images) need OCR first; text-based PDFs only.
 - **Free tiers:** Groq rate limits apply (handled with backoff); Colab sessions disconnect (progress is saved to Drive).
 - **LoRA quality scales with reviewed data.** A few dozen examples gives a proof of concept, not a production model.

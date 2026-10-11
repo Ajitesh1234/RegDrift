@@ -102,7 +102,7 @@ class JiraDedupe(unittest.TestCase):
         finally:
             regdrift.jira_request = orig
             for k in env: os.environ.pop(k)
-        self.assertGreaterEqual(first, 3)    # at least the 3 real findings (offline mode may add at_risk extras)
+        self.assertGreaterEqual(first, 2)    # the 2 real violations (KYC re-verification, sanctions screening)
         self.assertEqual(second, 0)          # nothing new on the second run
         self.assertTrue(all("DEMO/2026-27/101" in s for s in created))   # circular ref in title
 
@@ -346,7 +346,7 @@ class LlmVerdictCap(unittest.TestCase):
     def test_llm_only_violation_is_capped_at_risk(self):
         bot = {"id": "B", "name": "B", "platform": "UiPath", "description": "checks limits", "tags": [],
                "parameters": {"other_setting": 1}}
-        ob = {"clause": "Clause (d)", "summary": "obtain undertaking", "parameter": "capture_hedge_undertaking",
+        ob = {"clause": "Clause (d)", "summary": "obtain undertaking", "parameter": "some_unowned_setting",
               "operator": "==", "required_value": True, "unit": "", "modality": "mandatory"}
         orig = regdrift.llm_json
         regdrift.llm_json = lambda p: {"status": "violating", "confidence": 0.99, "reason": "does not collect it"}
@@ -380,3 +380,27 @@ class ChangedLimitGuard(unittest.TestCase):
         t = regdrift.load_text(os.path.join(regdrift.HERE, "circulars", "rbi_fx_derivatives_2026-10-10.pdf"))
         ob = {**self.ob(100), "clause": "Clause (c)"}
         self.assertEqual(regdrift.fix_changed_limit(ob, t)["required_value"], 5)
+
+
+class OwnerAndLabels(unittest.TestCase):
+    def test_clause_descriptors_are_dropped(self):
+        n = regdrift.norm_clause
+        self.assertEqual(n("Clause (c) - overall limit"), "Clause (c)")
+        self.assertEqual(n("(c) per-facility limit"), "Clause (c)")
+        self.assertEqual(n("Clause 5(1)(v)"), "Clause 5(1)(v)")
+        self.assertEqual(n("a"), "Clause (a)")
+
+    def test_non_owner_bot_is_not_applicable(self):
+        bot = {"id": "X", "name": "X", "platform": "UiPath", "description": "checks positions", "tags": [],
+               "parameters": {}}
+        ob = {"clause": "Clause (d)", "summary": "undertaking", "parameter": "capture_hedge_undertaking",
+              "operator": "==", "required_value": True, "unit": "", "modality": "mandatory"}
+        calls = []
+        orig = regdrift.llm_json
+        regdrift.llm_json = lambda p: calls.append(p)
+        try:
+            r = regdrift.judge({"obligation": ob, "bot": bot})
+        finally:
+            regdrift.llm_json = orig
+        self.assertEqual(r["status"], "not_applicable")
+        self.assertEqual(calls, [])   # no LLM call needed

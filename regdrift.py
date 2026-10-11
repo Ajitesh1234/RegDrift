@@ -287,6 +287,9 @@ def llm_extract_clause(body: str):
 def norm_clause(label) -> str:
     """'(a)', 'a', 'Clause (a)', 'Paragraph 3', 'para 3.' -> 'Clause (a)' / 'Clause 3' (stable across runs)."""
     core = re.sub(r"(?i)^\s*(sub-?clause|clause|paragraph|para|section)\s*", "", str(label or "")).strip(" .:")
+    m = re.match(r"(\([A-Za-z0-9ivx]+\)|\d+(?:\.\d+)*(?:\([A-Za-z0-9]+\))*)", core)
+    if m and len(core) > len(m.group(1)):  # drop descriptors: "(c) - overall limit" -> "(c)"
+        core = m.group(1)
     if re.fullmatch(r"[A-Za-z]", core):
         core = f"({core.lower()})"
     return f"Clause {core}" if core else "Clause ?"
@@ -535,6 +538,11 @@ def judge(imp):
         verb = "now permits" if ob.get("modality") == "permissive" else "requires"
         reason = " ".join(f"{param} is {cur} {ob.get('unit') or ''}, rule {verb} {op} {req}.".split()).replace(" ,", ",")
         return {"status": status, "confidence": 0.95, "reason": reason}
+    if any(param in b["parameters"] for b in load_bots()):
+        # Another bot owns this setting and is checked deterministically, so a bot that merely sounds
+        # related is not the owner. Asking the LLM here only produces noise.
+        return {"status": "not_applicable", "confidence": 0.8,
+                "reason": f"'{param}' is tracked by another bot; this bot does not own it."}
     r = llm_json(PROMPT_REASON.format(rule=ob["summary"], bot=bot["name"], platform=bot["platform"],
                                       desc=bot["description"], params=bot["parameters"]))
     if isinstance(r, dict) and r.get("status") in STATUSES:
