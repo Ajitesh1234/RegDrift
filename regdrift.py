@@ -82,10 +82,17 @@ def load_text(src: str) -> str:
         return "\n".join((p.extract_text() or "") for p in PdfReader(src).pages)
     return open(src, encoding="utf-8").read()
 
-NUM_START = r"(?:Clause\s+)?\d+\s*[.:)]\s"
+NUM_START = r"(?:(?:Clause\s+)?\d+\s*[.:)]|\([a-z]\))\s"
+
+CLAUSE_RE = re.compile(r"(?m)^\s*(?:(?:Clause\s+)?(\d+)\s*[.:)]|(\([a-z]\)))\s+(.+)")
+
+def iter_clauses(text):
+    for m in CLAUSE_RE.finditer(text):
+        yield f"Clause {m.group(1) or m.group(2)}", m.group(3)
 
 def clean(text: str) -> str:
     text = text.replace("\u00ad", "").replace("\r", "")
+    text = "\n".join(l for l in text.split("\n") if not l.strip() or sum(ord(c) > 127 for c in l) / len(l) < 0.2)
     text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)               # de-hyphenate line breaks
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n(?!\s*(?:%s|\n))" % NUM_START, " ", text)  # re-join wrapped lines
@@ -99,9 +106,12 @@ def ingest(state: State) -> State:
 
 # ---------- Node 2: obligation extractor ----------
 PROMPT_EXTRACT = """Extract machine-checkable obligations from this regulatory text.
-Return ONLY a JSON list. Each item: {{"clause": str, "summary": str,
-"parameter": snake_case name, "operator": "<=" or ">=", "required_value": number, "unit": str}}.
-Skip clauses with no measurable numeric rule.
+Return ONLY a JSON list. Each item: {{"clause": str (e.g. "Clause (a)"), "summary": str (one sentence),
+"parameter": snake_case name, "operator": "<=", ">=" or "==", "required_value": number or true/false, "unit": str}}.
+Use "==" with true/false for yes/no rules (e.g. a thing must or must not be allowed/captured).
+Where the rule concerns one of these existing bot settings, reuse that exact parameter name:
+{params}
+If the circular changes an old limit to a new one, use the NEW value. Skip clauses with no checkable rule.
 TEXT:
 {text}"""
 
@@ -112,19 +122,22 @@ FALLBACK_RULES = [
     (r"sanctions", "sanctions_screening_frequency_days", "<=", "days"),
 ]
 
+def known_params():
+    with open(os.path.join(HERE, "bots.json")) as fh:
+        return sorted({p for b in json.load(fh) for p in b["parameters"]})
+
 def extract(state: State) -> State:
     obs = None
     if os.getenv("LORA_ADAPTER"):
         obs = []
-        for m in re.finditer(r"(?m)^\s*(?:Clause\s+)?(\d+)\s*[.:)]\s*(.+)", state["circular_text"]):
-            for o in lora_extract(m.group(2)) or []:
-                obs.append({"clause": f"Clause {m.group(1)}", "summary": m.group(2), **o})
+        for clause, body in iter_clauses(state["circular_text"]):
+            for o in lora_extract(body) or []:
+                obs.append({"clause": clause, "summary": body, **o})
     if not obs:
-        obs = llm_json(PROMPT_EXTRACT.format(text=state["circular_text"]))
+        obs = llm_json(PROMPT_EXTRACT.format(text=state["circular_text"], params=known_params()))
     if not obs:
         obs = []
-        for m in re.finditer(r"(?m)^\s*(?:Clause\s+)?(\d+)\s*[.:)]\s*(.+)", state["circular_text"]):
-            clause, body = f"Clause {m.group(1)}", m.group(2)
+        for clause, body in iter_clauses(state["circular_text"]):
             for pat, param, op, unit in FALLBACK_RULES:
                 if re.search(pat, body, re.I):
                     nums = re.findall(r"(\d+)\s*(?:years?|days?)", body)
@@ -198,9 +211,10 @@ def judge(imp):
     param = ob["parameter"]
     if param in bot["parameters"]:  # deterministic check on structured data first
         cur, req = bot["parameters"][param], ob["required_value"]
-        ok = cur <= req if ob["operator"] == "<=" else cur >= req
+        op = ob["operator"]
+        ok = cur <= req if op == "<=" else cur >= req if op == ">=" else cur == req
         return {"status": "compliant" if ok else "violating", "confidence": 0.95,
-                "reason": f"{param} is {cur} {ob['unit']}, rule requires {ob['operator']} {req:g}."}
+                "reason": " ".join(f"{param} is {cur} {ob.get('unit') or ''}, rule requires {op} {req}.".split()).replace(" ,", ",")}
     r = llm_json(PROMPT_REASON.format(rule=ob["summary"], bot=bot["name"], platform=bot["platform"],
                                       desc=bot["description"], params=bot["parameters"]))
     if isinstance(r, dict) and r.get("status") in ("not_applicable", "compliant", "at_risk", "violating"):
