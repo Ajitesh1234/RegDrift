@@ -16,6 +16,7 @@ limit or a deadline, so gaps are found in audits, months later. RegDrift turns t
 | RBI/2026-27/291 (FX derivatives) | `FX-Derivative-Booking-Bot` still allows rebooking of cancelled contracts (clause a) | High |
 | | `Hedge-Limit-Checker-Bot` threshold is 100, circular now says 5 (clause c) | High |
 | | `Hedge-Documentation-Bot` does not capture the "not hedged elsewhere" undertaking (clause d) | High |
+| | `Hedge-Documentation-Bot` keeps records 5 years, rule needs at least 2 (clause 3) | Compliant, no ticket |
 | RBI/2026-27/257 (KYC amendment) | `KYC-Document-Verification-Bot` accepts certified copies for NRI/PIO but not the newly permitted FPI | Low (`optional_gap`) |
 
 The second row shows the distinction that matters: the KYC circular says banks **may** do something. A bot that does not
@@ -91,9 +92,20 @@ Run it all from `RegDrift_LoRA_Train.ipynb`.
      trails Groq: a small local model that is close to a large API model is still a useful result. -->
 _Not yet measured. Run the notebook, then paste the table here._
 
+## Dashboard and Docker
+Every run also writes `reports/dashboard.html`, a self-contained page with severity counts and every finding with its
+Jira key. Open it in any browser, or run `python dashboard.py` to rebuild it from existing reports.
+
+```
+docker build -t regdrift .
+docker run --rm -e GROQ_API_KEY -v "$PWD/circulars:/app/circulars" regdrift circulars --dry-run
+```
+
 ## Project layout
 ```
 regdrift.py            pipeline + CLI (LangGraph graph, validation, retries, Jira, reports)
+dashboard.py           reports/*.json -> reports/dashboard.html (written after every run)
+Dockerfile             container image (secrets via environment variables only)
 import_bot.py          UiPath Config.xlsx / CSV -> bots.json
 review.py              human review of tickets
 distill.py  review_candidates.py  build_lora_data.py  train_lora.py  evaluate.py   LoRA pipeline
@@ -108,6 +120,8 @@ RegDrift_Colab.ipynb  RegDrift_LoRA_Train.ipynb  .github/workflows/run.yml  .env
 - **Bot ingestion.** `import_bot.py` reads the UiPath REFramework `Config.xlsx` layout (Name/Value/Description sheets) and
   generic Name,Value CSVs; it was tested on generated files, not a real production export. It does not parse Blue Prism
   release files; export the bot's environment variables to CSV instead.
+- **Value matching is heuristic.** List values are compared ignoring case, plurals and acronyms (so "Foreign Portfolio
+  Investors" matches `FPI`), but unrelated synonyms (e.g. FII vs FPI) are not matched and would show as a gap.
 - **Extraction can be wrong.** LLM and LoRA output is validated for shape, not truth. Tickets are for a human to confirm.
 - **Rules need a matching setting.** If a bot's behaviour is not exposed as a setting, RegDrift can only flag it
   *at risk* for manual review.

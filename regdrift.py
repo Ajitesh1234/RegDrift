@@ -17,7 +17,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Dict, List, TypedDict
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 log = logging.getLogger("regdrift")
 
@@ -443,6 +443,38 @@ rule, answer not_applicable. Otherwise judge compliance. Return ONLY JSON:
 STATUSES = ("not_applicable", "compliant", "at_risk", "violating", "optional_gap")
 
 
+STOP_WORDS = {"of", "the", "and", "a", "an", "for", "in"}
+
+
+def _norm_item(x) -> str:
+    return " ".join(re.sub(r"[^a-z0-9 ]+", " ", str(x).lower()).split())
+
+
+def _singular(w: str) -> str:
+    return w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
+
+
+def same_item(a, b) -> bool:
+    """Do two list values name the same thing? Handles case, plurals, punctuation and acronyms,
+    so 'Foreign Portfolio Investors' matches 'FPI' and 'NRIs' matches 'NRI'."""
+    na, nb = _norm_item(a), _norm_item(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    ta = [_singular(w) for w in na.split()]
+    tb = [_singular(w) for w in nb.split()]
+    if ta == tb:
+        return True
+
+    def acro(tokens):
+        return "".join(w[0] for w in tokens if w not in STOP_WORDS)
+    for short, long_ in ((ta, tb), (tb, ta)):
+        if len(short) == 1 and len(long_) > 1 and short[0] == acro(long_):
+            return True
+    return False
+
+
 def judge(imp):
     ob, bot = imp["obligation"], imp["bot"]
     param = ob["parameter"]
@@ -451,7 +483,7 @@ def judge(imp):
         try:
             if op == "contains":
                 items = cur if isinstance(cur, list) else [cur]
-                ok = str(req).strip().lower() in [str(x).strip().lower() for x in items]
+                ok = any(same_item(req, x) for x in items)
             else:
                 ok = cur <= req if op == "<=" else cur >= req if op == ">=" else cur == req
         except TypeError:
@@ -662,6 +694,11 @@ def main(argv=None) -> int:
             rc = max(rc, 1)
     with open(args.tickets, "w", encoding="utf-8") as fh:
         json.dump(all_tickets, fh, indent=2, default=str)
+    try:  # best-effort HTML dashboard next to the JSON reports
+        import dashboard
+        dashboard.main(["--reports", args.report_dir])
+    except Exception as e:
+        log.warning("dashboard not written: %s", e)
 
     log.info("\n=== RESULTS ===")
     for name, f in rows:

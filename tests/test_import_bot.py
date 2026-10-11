@@ -2,8 +2,11 @@ import csv, json, os, sys, tempfile, unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 for k in ("GROQ_API_KEY", "LORA_ADAPTER", "JIRA_URL"): os.environ.pop(k, None)
+try:
+    from openpyxl import Workbook
+except ImportError:  # optional dependency: skip these tests instead of crashing the run
+    raise unittest.SkipTest("openpyxl not installed (pip install -r requirements.txt)")
 import import_bot, regdrift
-from openpyxl import Workbook
 
 
 def make_config(path, extra_settings=()):

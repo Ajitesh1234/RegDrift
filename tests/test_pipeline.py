@@ -311,3 +311,32 @@ class CLI(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AliasMatching(unittest.TestCase):
+    def test_acronyms_plurals_and_case(self):
+        s = regdrift.same_item
+        self.assertTrue(s("Foreign Portfolio Investors", "FPI"))
+        self.assertTrue(s("fpi", "Foreign Portfolio Investor"))
+        self.assertTrue(s("NRIs", "NRI"))
+        self.assertFalse(s("NRI", "PIO"))
+        self.assertFalse(s("Foreign Portfolio Investors", "FII"))
+
+    def test_judge_contains_uses_aliases(self):
+        bot = {"id": "B", "name": "B", "platform": "UiPath", "description": "", "tags": [],
+               "parameters": {"accepted_customer_types": ["NRI", "FPI"]}}
+        ob = {"clause": "Clause 1", "summary": "s", "parameter": "accepted_customer_types", "operator": "contains",
+              "required_value": "Foreign Portfolio Investors", "unit": "", "modality": "permissive"}
+        self.assertEqual(regdrift.judge({"obligation": ob, "bot": bot})["status"], "compliant")
+
+
+class Dashboard(unittest.TestCase):
+    def test_render_escapes_and_counts(self):
+        import dashboard
+        rep = {"source": "x.pdf", "circular_ref": "R/1", "run_at_utc": "t", "tickets": [],
+               "findings": [{"status": "violating", "bot": "<b>Bot</b>", "bot_id": "1", "clause": "C1",
+                             "reason": "bad & wrong", "ref": "R/1"}]}
+        out = dashboard.render([rep])
+        self.assertIn("&lt;b&gt;Bot&lt;/b&gt;", out)
+        self.assertNotIn("<b>Bot</b>", out)
+        self.assertIn("bad &amp; wrong", out)
