@@ -56,9 +56,10 @@ def main():
     model = get_peft_model(model, LoraConfig(r=a.rank, lora_alpha=2 * a.rank, lora_dropout=0.05, task_type="CAUSAL_LM",
                                              target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]))
     model.print_trainable_parameters()
-    args = TrainingArguments(output_dir="out", num_train_epochs=a.epochs, per_device_train_batch_size=a.batch,
-                             learning_rate=a.lr, lr_scheduler_type="cosine", warmup_ratio=0.05, logging_steps=5,
-                             save_strategy="no", fp16=torch.cuda.is_available(), report_to="none", seed=a.seed)
+    kw = dict(output_dir="out", num_train_epochs=a.epochs, per_device_train_batch_size=a.batch,
+              learning_rate=a.lr, lr_scheduler_type="cosine", warmup_steps=3, logging_steps=5,
+              save_strategy="no", fp16=torch.cuda.is_available(), report_to="none", seed=a.seed)
+    args = TrainingArguments(**kw)
     Trainer(model=model, args=args, train_dataset=ds,
             data_collator=DataCollatorForSeq2Seq(tok, padding=True, label_pad_token_id=-100)).train()
     model.save_pretrained(a.out)
