@@ -59,5 +59,31 @@ class NotApplicable(unittest.TestCase):
             regdrift.llm_json = orig
         self.assertEqual([b for b, _ in f], ["Sanctions-Screening-Bot"])
 
+class RealCircularFX(unittest.TestCase):
+    """RBI/2026-27/291 (FX derivatives). The LLM is stubbed with a correct extraction; this checks the plumbing."""
+    def test_fx_circular(self):
+        pdf = os.path.join(regdrift.HERE, "circulars", "rbi_fx_derivatives_2026-10-10.pdf")
+        if not os.path.exists(pdf): self.skipTest("circular pdf not in repo")
+        orig = regdrift.llm_json
+        def stub(p):
+            if "Extract machine-checkable" not in p: return None
+            return [
+              {"clause": "Clause (a)", "summary": "no rebooking of cancelled INR FX derivatives", "parameter": "allow_rebook_cancelled_contracts", "operator": "==", "required_value": False, "unit": ""},
+              {"clause": "Clause (c)", "summary": "threshold without underlying is USD 5 million", "parameter": "max_position_without_underlying_usd_million", "operator": "<=", "required_value": 5, "unit": "USD million"},
+              {"clause": "Clause (d)", "summary": "obtain undertaking not hedged elsewhere", "parameter": "capture_hedge_undertaking", "operator": "==", "required_value": True, "unit": ""},
+              {"clause": "Clause 3", "summary": "retain documents not less than two years", "parameter": "record_retention_years", "operator": ">=", "required_value": 2, "unit": "years"}]
+        regdrift.llm_json = stub
+        try:
+            f = flagged(regdrift.load_text(pdf))
+        finally:
+            regdrift.llm_json = orig
+        for key in [("FX-Derivative-Booking-Bot", "Clause (a)"), ("Hedge-Limit-Checker-Bot", "Clause (c)"), ("Hedge-Documentation-Bot", "Clause (d)")]:
+            self.assertEqual(f[key]["status"], "violating")
+        self.assertNotIn(("Hedge-Documentation-Bot", "Clause 3"), f)   # 5 years retained >= 2: compliant, no ticket
+
+    def test_lettered_clauses_parsed(self):
+        labels = [c for c, _ in regdrift.iter_clauses(regdrift.clean("(a) First rule here.\n(b) Second rule\nwraps here.\n"))]
+        self.assertEqual(labels, ["Clause (a)", "Clause (b)"])
+
 if __name__ == "__main__":
     unittest.main()
