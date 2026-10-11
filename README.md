@@ -19,3 +19,6 @@ Pipeline (LangGraph): ingest -> obligation extraction -> RAG impact analysis (Ch
 - Sample circular and bots are synthetic demo data. Seed LoRA examples (13) are hand-written; add real ones.
 - Deterministic checks only work where a bot exposes the rule's parameter; otherwise the LLM or a manual-review flag decides.
 - Blue Prism/UiPath are represented by bot metadata, not live bots.
+
+RegDrift creates Jira tickets automatically for each non-compliant bot:
+<img width="1447" height="198" alt="image" src="https://github.com/user-attachments/assets/5cf40fc9-61f6-4c3c-b86b-ba95f8328ff4" />
