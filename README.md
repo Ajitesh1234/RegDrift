@@ -78,7 +78,8 @@ A small model (Qwen2.5-0.5B-Instruct + LoRA) that turns one clause into structur
 locally and cheaply instead of calling an LLM.
 
 1. `distill.py`: Groq proposes labels for every clause in `circulars/` (resumable, rate-limit aware).
-2. `review_candidates.py`: **a human accepts, fixes or rejects each one.** Only reviewed rows become training data.
+2. `review_candidates.py`: each proposal is accepted, fixed or rejected. Only reviewed rows become training data. (In the
+   reported run the review was done by Claude, an LLM, not by a human compliance expert; see Results.)
 3. `build_lora_data.py`: builds train/test, **holding out whole circulars** so the test measures generalisation,
    with leakage and duplicate guards. Fewer than 4 circulars means no test set (it will not fake one).
 4. `train_lora.py`: LoRA fine-tune on a free Colab T4 (loss on the JSON completion only).
@@ -88,9 +89,25 @@ locally and cheaply instead of calling an LLM.
 Run it all from `RegDrift_LoRA_Train.ipynb`.
 
 ### Results
-<!-- Paste docs/eval_results.md here after running evaluate.py. Report what you measured, including if the LoRA model
-     trails Groq: a small local model that is close to a large API model is still a useful result. -->
-_Not yet measured. Run the notebook, then paste the table here._
+
+First proof-of-concept run: 11 real RBI circulars, 33 clauses, 10 of which carry a checkable rule. Held-out test:
+3 whole circulars never seen in training (8 clauses, **only 1 contains a rule**).
+
+| Extractor | Detection F1 | Precision | Recall | Exact match | Content match |
+|---|---|---|---|---|---|
+| Keyword baseline | 0.00 | 0.00 | 0.00 | 0.88 | 0.88 |
+| Groq LLM (zero-shot) | 1.00 | 1.00 | 1.00 | 0.88 | 0.88 |
+| LoRA-tuned Qwen2.5-0.5B | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+
+**How to read this honestly:**
+- The test set has 8 clauses and a single positive, so every number is one clause away from changing. This shows the
+  train/evaluate pipeline works end to end. It does **not** show that the small model beats Groq or generalises.
+- The held-out KYC circular is worded almost exactly like six KYC circulars in the training set (same text for different
+  bank types), so it is an easy test.
+- Labels were proposed by Groq and reviewed by Claude (an LLM), not by a human compliance expert. Groq's score is also
+  slightly depressed because the reviewed labels use short names (`NRI`) where Groq writes long ones.
+- Next step for a meaningful number: circulars on other topics (loans, reporting deadlines, limits), at least 30 rule-bearing clauses
+  in the test set.
 
 ## Dashboard and Docker
 Every run also writes `reports/dashboard.html`, a self-contained page with severity counts and every finding with its
