@@ -122,5 +122,27 @@ class GroqHeaders(unittest.TestCase):
             regdrift.urllib.request.urlopen = orig; os.environ.pop("GROQ_API_KEY")
         self.assertIn("regdrift", seen.get("user-agent", ""))
 
+class GroqModelFallback(unittest.TestCase):
+    def test_skips_unavailable_models(self):
+        import io, json as _j, urllib.error
+        tried = []
+        class R:
+            def read(self): return b'{"choices":[{"message":{"content":"[{\\"a\\": 1}]"}}]}'
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+        def fake_open(req, timeout=0):
+            model = _j.loads(req.data)["model"]; tried.append(model)
+            if model != "llama-3.3-70b-versatile":
+                raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, io.BytesIO(b'{"error":{"code":"model_not_found","message":"The model does not exist"}}'))
+            return R()
+        orig, regdrift._groq = regdrift.urllib.request.urlopen, {}
+        regdrift.urllib.request.urlopen = fake_open; os.environ["GROQ_API_KEY"] = "k"
+        try: result = regdrift.llm_json("x"); again = regdrift.llm_json("y")
+        finally:
+            regdrift.urllib.request.urlopen = orig; os.environ.pop("GROQ_API_KEY"); regdrift._groq = {}
+        self.assertEqual(result, [{"a": 1}])
+        self.assertEqual(tried[:3], ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile"])
+        self.assertEqual(tried[3], "llama-3.3-70b-versatile")   # second call goes straight to the working model
+
 if __name__ == "__main__":
     unittest.main()
