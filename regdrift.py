@@ -92,7 +92,7 @@ def clean(text: str) -> str:
     return re.sub(r"\n{2,}", "\n", text).strip()
 
 def ingest(state: State) -> State:
-    text = state.get("circular_text") or open(os.path.join(HERE, "circular_sample.txt")).read()
+    text = state.get("circular_text") or open(os.path.join(HERE, "circular_sample.txt"), encoding="utf-8").read()
     text = clean(text)
     print(f"[1/5] Ingested circular ({len(text)} chars)")
     return {"circular_text": text}
@@ -147,11 +147,11 @@ def bot_doc(b): return f"{b['name']} {b['description']} {' '.join(b['tags'])}"
 
 def retrieve_chroma(bots, query, k):
     import chromadb  # default embedding model downloads once, then runs locally
-    col = chromadb.Client().get_or_create_collection("bots")
+    col = chromadb.Client().get_or_create_collection("bots", metadata={"hnsw:space": "cosine"})
     if col.count() == 0:
         col.add(ids=[b["id"] for b in bots], documents=[bot_doc(b) for b in bots])
     res = col.query(query_texts=[query], n_results=k)
-    return [(i, 1 - d) for i, d in zip(res["ids"][0], res["distances"][0])]
+    return [(i, 1 - d) for i, d in zip(res["ids"][0], res["distances"][0])]  # cosine distance -> similarity
 
 def retrieve_bow(bots, query, k):
     q = Counter(tok(query))
@@ -159,18 +159,29 @@ def retrieve_bow(bots, query, k):
                     key=lambda x: -x[1])
     return scored[:k]
 
+SIM_THRESHOLD = {"chroma": 0.25, "bow": 0.12}
+
 def retrieve(state: State) -> State:
-    bots = json.load(open(os.path.join(HERE, "bots.json")))
+    with open(os.path.join(HERE, "bots.json")) as fh:
+        bots = json.load(fh)
     by_id = {b["id"]: b for b in bots}
     impacts = []
     for ob in state["obligations"]:
+        hits, kind = {}, "chroma"
+        # (a) exact structured match: a bot that exposes the rule's parameter is always affected
+        for b in bots:
+            if ob.get("parameter") in b["parameters"]:
+                hits[b["id"]] = 1.0
+        # (b) semantic retrieval for bots without that parameter
         try:
-            hits = retrieve_chroma(bots, ob["summary"], 2)
+            found = retrieve_chroma(bots, ob["summary"], 3)
         except Exception:
-            hits = retrieve_bow(bots, ob["summary"], 2)
-        for bid, score in hits:
-            if score >= 0.12:
-                impacts.append({"obligation": ob, "bot": by_id[bid], "score": round(score, 2)})
+            found, kind = retrieve_bow(bots, ob["summary"], 3), "bow"
+        for bid, score in found:
+            if score >= SIM_THRESHOLD[kind]:
+                hits.setdefault(bid, score)
+        for bid, score in hits.items():
+            impacts.append({"obligation": ob, "bot": by_id[bid], "score": round(score, 2)})
     print(f"[3/5] Retrieved {len(impacts)} (rule, bot) pairs")
     return {"impacts": impacts}
 
@@ -234,7 +245,8 @@ def act(state: State) -> State:
         except Exception as e:
             t["jira_key"] = f"FAILED: {e}"
         tickets.append(t)
-    json.dump(tickets, open(os.path.join(HERE, "tickets.json"), "w"), indent=2)
+    with open(os.path.join(HERE, "tickets.json"), "w") as fh:
+        json.dump(tickets, fh, indent=2)
     print(f"[5/5] Created {len(tickets)} tickets ({'Jira' if live else 'dry-run, saved to tickets.json'})")
     return {"tickets": tickets}
 
