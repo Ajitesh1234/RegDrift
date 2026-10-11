@@ -48,5 +48,16 @@ class WeakChroma(unittest.TestCase):
             del sys.modules["chromadb"]
         self.assertEqual(f[("STR-Filer-Bot", "Clause 3")]["status"], "violating")
 
+class NotApplicable(unittest.TestCase):
+    def test_llm_not_applicable_creates_no_ticket(self):
+        orig = regdrift.llm_json
+        # Extraction falls back to rules (None); the judge says the rule is unrelated to bots without the parameter.
+        regdrift.llm_json = lambda p: {"status": "not_applicable", "confidence": 0.9, "reason": "unrelated"} if "Bot parameters" in p else None
+        try:
+            f = flagged("3. Customer names shall be screened against sanctions lists at an interval of not more than 1 day.\n")
+        finally:
+            regdrift.llm_json = orig
+        self.assertEqual([b for b, _ in f], ["Sanctions-Screening-Bot"])
+
 if __name__ == "__main__":
     unittest.main()
