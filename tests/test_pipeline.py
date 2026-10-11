@@ -85,5 +85,42 @@ class RealCircularFX(unittest.TestCase):
         labels = [c for c, _ in regdrift.iter_clauses(regdrift.clean("(a) First rule here.\n(b) Second rule\nwraps here.\n"))]
         self.assertEqual(labels, ["Clause (a)", "Clause (b)"])
 
+class JiraDedupe(unittest.TestCase):
+    def test_second_run_creates_nothing(self):
+        created, existing = [], []
+        def fake(path, body=None):
+            if path.startswith("/rest/api/3/search/jql"):
+                return {"issues": [{"fields": {"summary": s}} for s in existing], "isLast": True}
+            created.append(body["fields"]["summary"]); existing.append(body["fields"]["summary"])
+            return {"key": f"SCRUM-{len(created)}"}
+        env = dict(JIRA_URL="https://x.atlassian.net", JIRA_EMAIL="a@b.c", JIRA_TOKEN="t", JIRA_PROJECT="SCRUM")
+        os.environ.update(env); orig = regdrift.jira_request; regdrift.jira_request = fake
+        try:
+            with open(os.path.join(regdrift.HERE, "circular_sample.txt")) as fh: text = fh.read()
+            regdrift.run({"circular_text": text}); first = len(created)
+            regdrift.run({"circular_text": text}); second = len(created) - first
+        finally:
+            regdrift.jira_request = orig
+            for k in env: os.environ.pop(k)
+        self.assertEqual(first, 3)
+        self.assertEqual(second, 0)
+        self.assertTrue(all("DEMO/2026-27/101" in s for s in created))   # circular ref in title
+
+class GroqHeaders(unittest.TestCase):
+    def test_user_agent_sent(self):
+        seen = {}
+        class R:  # minimal response
+            def read(self): return b'{"choices":[{"message":{"content":"[]"}}]}'
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+        def fake_open(req, timeout=0):
+            seen.update({k.lower(): v for k, v in req.header_items()}); return R()
+        orig = regdrift.urllib.request.urlopen; regdrift.urllib.request.urlopen = fake_open
+        os.environ["GROQ_API_KEY"] = "k"
+        try: regdrift.llm_json("hi")
+        finally:
+            regdrift.urllib.request.urlopen = orig; os.environ.pop("GROQ_API_KEY")
+        self.assertIn("regdrift", seen.get("user-agent", ""))
+
 if __name__ == "__main__":
     unittest.main()
