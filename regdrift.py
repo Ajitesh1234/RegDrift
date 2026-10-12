@@ -535,6 +535,8 @@ def judge(imp):
     if param in bot["parameters"]:  # deterministic check on structured data first
         cur, req, op = bot["parameters"][param], ob["required_value"], ob["operator"]
         try:
+            if op != "contains" and isinstance(cur, bool) != isinstance(req, bool):
+                raise TypeError("yes/no value compared with a number")  # Python says True == 1; a check must not
             if op == "contains":
                 items = cur if isinstance(cur, list) else [cur]
                 ok = any(same_item(req, x) for x in items)
