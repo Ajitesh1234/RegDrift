@@ -113,6 +113,24 @@ First proof-of-concept run: 11 real RBI circulars, 33 clauses, 10 of which carry
 - Next step for a meaningful number: circulars on other topics (loans, reporting deadlines, limits), at least 30 rule-bearing clauses
   in the test set.
 
+## Measured accuracy: decision layer
+
+The part that decides *compliant / violating / at risk* is plain code, so it can be tested exactly. `eval/judge_gold.json`
+holds 33 hand-labelled cases (rule + bot setting -> correct verdict) covering caps and floors at the boundary, yes/no
+rules, list rules with aliases, optional rules, type mismatches and "setting owned by another bot". The expected answers
+were written from the rules before running the code.
+
+```
+python eval_judge.py        # 33/33 correct, with per-status precision/recall and every miss listed
+```
+
+Writing the set found two real bugs, both now fixed: Python treats `True == 1`, so a yes/no setting could pass a numeric
+rule and a 0/1 setting could pass a yes/no rule. Those pairs now go to *at risk* for a human. The set runs in CI
+(`tests/test_gold.py`), so a change that flips any verdict fails the build.
+
+What this does **not** measure: whether the LLM extracts the right rule from a circular (see the LoRA results above),
+or how the system does on bots other than the demo ones. It checks the logic, not the extraction.
+
 ## Web app
 
 A small web interface sits on top of the same pipeline: add a circular (PDF, text, or one of the bundled samples), see
