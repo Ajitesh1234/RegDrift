@@ -1,0 +1,551 @@
+{
+ "about": "Hand-labelled expectations for the deterministic decision layer. Written from the rules, not from program output.",
+ "bots": [
+  {
+   "id": "G-1",
+   "name": "Limits-Bot",
+   "platform": "UiPath",
+   "description": "Applies numeric limits.",
+   "tags": [
+    "limits"
+   ],
+   "parameters": {
+    "max_days": 7,
+    "min_years": 3,
+    "approve_flag": true,
+    "block_flag": false,
+    "retention_years": 5,
+    "ratio": 0.5,
+    "allowed_types": [
+     "NRI",
+     "PIO"
+    ],
+    "empty_list": [],
+    "text_mode": "manual",
+    "tag_list": [
+     "a"
+    ],
+    "single_type": "NRI"
+   }
+  },
+  {
+   "id": "G-2",
+   "name": "Describer-Bot",
+   "platform": "Blue Prism",
+   "description": "Handles customer onboarding; exposes no settings.",
+   "tags": [
+    "onboarding"
+   ],
+   "parameters": {}
+  },
+  {
+   "id": "G-3",
+   "name": "Numeric-Flag-Bot",
+   "platform": "UiPath",
+   "description": "Legacy bot with 0/1 switches.",
+   "tags": [
+    "legacy"
+   ],
+   "parameters": {
+    "legacy_switch": 1
+   }
+  }
+ ],
+ "cases": [
+  {
+   "id": "le-below",
+   "note": "cap, setting below cap",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "max_days <= 10",
+    "parameter": "max_days",
+    "operator": "<=",
+    "required_value": 10,
+    "unit": "days",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "le-equal",
+   "note": "cap, setting exactly at cap",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "max_days <= 7",
+    "parameter": "max_days",
+    "operator": "<=",
+    "required_value": 7,
+    "unit": "days",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "le-above",
+   "note": "cap, setting above cap",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "max_days <= 5",
+    "parameter": "max_days",
+    "operator": "<=",
+    "required_value": 5,
+    "unit": "days",
+    "modality": "mandatory"
+   },
+   "expect": "violating"
+  },
+  {
+   "id": "ge-equal",
+   "note": "floor, setting exactly at floor",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "min_years >= 3",
+    "parameter": "min_years",
+    "operator": ">=",
+    "required_value": 3,
+    "unit": "years",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "ge-below",
+   "note": "floor, setting below floor",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "min_years >= 4",
+    "parameter": "min_years",
+    "operator": ">=",
+    "required_value": 4,
+    "unit": "years",
+    "modality": "mandatory"
+   },
+   "expect": "violating"
+  },
+  {
+   "id": "ge-above",
+   "note": "floor, setting above floor",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "min_years >= 2",
+    "parameter": "min_years",
+    "operator": ">=",
+    "required_value": 2,
+    "unit": "years",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "eq-true",
+   "note": "yes/no rule satisfied",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "approve_flag == True",
+    "parameter": "approve_flag",
+    "operator": "==",
+    "required_value": true,
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "eq-false-rule",
+   "note": "yes/no rule: must be off, is on",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "approve_flag == False",
+    "parameter": "approve_flag",
+    "operator": "==",
+    "required_value": false,
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "violating"
+  },
+  {
+   "id": "eq-must-on",
+   "note": "yes/no rule: must be on, is off",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "block_flag == True",
+    "parameter": "block_flag",
+    "operator": "==",
+    "required_value": true,
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "violating"
+  },
+  {
+   "id": "eq-off-ok",
+   "note": "yes/no rule: must be off, is off",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "block_flag == False",
+    "parameter": "block_flag",
+    "operator": "==",
+    "required_value": false,
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "eq-number-ok",
+   "note": "exact number matches",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "retention_years == 5",
+    "parameter": "retention_years",
+    "operator": "==",
+    "required_value": 5,
+    "unit": "years",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "eq-number-bad",
+   "note": "exact number differs",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "retention_years == 7",
+    "parameter": "retention_years",
+    "operator": "==",
+    "required_value": 7,
+    "unit": "years",
+    "modality": "mandatory"
+   },
+   "expect": "violating"
+  },
+  {
+   "id": "float-limit",
+   "note": "fractional limit, setting above",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "ratio <= 0.4",
+    "parameter": "ratio",
+    "operator": "<=",
+    "required_value": 0.4,
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "violating"
+  },
+  {
+   "id": "float-ok",
+   "note": "fractional limit, setting at limit",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "ratio <= 0.5",
+    "parameter": "ratio",
+    "operator": "<=",
+    "required_value": 0.5,
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "int-vs-float",
+   "note": "integer setting against float rule value",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "max_days <= 7.0",
+    "parameter": "max_days",
+    "operator": "<=",
+    "required_value": 7.0,
+    "unit": "days",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "contains-exact",
+   "note": "list includes required item",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "allowed_types contains NRI",
+    "parameter": "allowed_types",
+    "operator": "contains",
+    "required_value": "NRI",
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "contains-case",
+   "note": "case difference",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "allowed_types contains nri",
+    "parameter": "allowed_types",
+    "operator": "contains",
+    "required_value": "nri",
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "contains-plural",
+   "note": "plural form",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "allowed_types contains NRIs",
+    "parameter": "allowed_types",
+    "operator": "contains",
+    "required_value": "NRIs",
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "contains-expanded",
+   "note": "spelled-out name of an acronym in the list",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "allowed_types contains Persons of Indian Origin",
+    "parameter": "allowed_types",
+    "operator": "contains",
+    "required_value": "Persons of Indian Origin",
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "contains-missing",
+   "note": "required item absent from list",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "allowed_types contains FPI",
+    "parameter": "allowed_types",
+    "operator": "contains",
+    "required_value": "FPI",
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "violating"
+  },
+  {
+   "id": "contains-empty",
+   "note": "setting is an empty list",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "empty_list contains NRI",
+    "parameter": "empty_list",
+    "operator": "contains",
+    "required_value": "NRI",
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "violating"
+  },
+  {
+   "id": "contains-scalar",
+   "note": "setting is a single value, not a list",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "single_type contains NRI",
+    "parameter": "single_type",
+    "operator": "contains",
+    "required_value": "NRI",
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "contains-missing-permissive",
+   "note": "optional item not adopted",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "allowed_types contains FPI",
+    "parameter": "allowed_types",
+    "operator": "contains",
+    "required_value": "FPI",
+    "unit": "",
+    "modality": "permissive"
+   },
+   "expect": "optional_gap"
+  },
+  {
+   "id": "contains-adopted-permissive",
+   "note": "optional item already adopted",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "allowed_types contains NRI",
+    "parameter": "allowed_types",
+    "operator": "contains",
+    "required_value": "NRI",
+    "unit": "",
+    "modality": "permissive"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "permissive-off",
+   "note": "optional feature not adopted",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "block_flag == True",
+    "parameter": "block_flag",
+    "operator": "==",
+    "required_value": true,
+    "unit": "",
+    "modality": "permissive"
+   },
+   "expect": "optional_gap"
+  },
+  {
+   "id": "permissive-on",
+   "note": "optional feature already adopted",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "approve_flag == True",
+    "parameter": "approve_flag",
+    "operator": "==",
+    "required_value": true,
+    "unit": "",
+    "modality": "permissive"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "mismatch-text",
+   "note": "text setting against a numeric limit: cannot compare, needs a human",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "text_mode <= 3",
+    "parameter": "text_mode",
+    "operator": "<=",
+    "required_value": 3,
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "at_risk"
+  },
+  {
+   "id": "mismatch-list",
+   "note": "list setting against a numeric limit",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "tag_list <= 3",
+    "parameter": "tag_list",
+    "operator": "<=",
+    "required_value": 3,
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "at_risk"
+  },
+  {
+   "id": "mismatch-bool-numeric",
+   "note": "on/off setting against a numeric limit: not meaningful, needs a human",
+   "bot": "Limits-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "approve_flag <= 1",
+    "parameter": "approve_flag",
+    "operator": "<=",
+    "required_value": 1,
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "at_risk"
+  },
+  {
+   "id": "mismatch-numeric-bool",
+   "note": "0/1 setting against a yes/no rule: ambiguous, needs a human",
+   "bot": "Numeric-Flag-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "legacy_switch == True",
+    "parameter": "legacy_switch",
+    "operator": "==",
+    "required_value": true,
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "at_risk"
+  },
+  {
+   "id": "owner-elsewhere",
+   "note": "setting owned by another bot, this bot has none of it",
+   "bot": "Describer-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "max_days <= 5",
+    "parameter": "max_days",
+    "operator": "<=",
+    "required_value": 5,
+    "unit": "days",
+    "modality": "mandatory"
+   },
+   "expect": "not_applicable"
+  },
+  {
+   "id": "owner-elsewhere-flag",
+   "note": "yes/no setting owned by another bot",
+   "bot": "Describer-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "approve_flag == False",
+    "parameter": "approve_flag",
+    "operator": "==",
+    "required_value": false,
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "not_applicable"
+  },
+  {
+   "id": "owner-elsewhere-contains",
+   "note": "list setting owned by another bot",
+   "bot": "Numeric-Flag-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "allowed_types contains NRI",
+    "parameter": "allowed_types",
+    "operator": "contains",
+    "required_value": "NRI",
+    "unit": "",
+    "modality": "mandatory"
+   },
+   "expect": "not_applicable"
+  }
+ ]
+}
