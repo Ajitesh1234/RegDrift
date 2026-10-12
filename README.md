@@ -1,6 +1,10 @@
 # RegDrift
-**Live demo:** https://regdrift.onrender.com (free tier; the first load can take about a minute to wake)
+
 ![tests](https://github.com/Ajitesh1234/RegDrift/actions/workflows/run.yml/badge.svg)
+
+**Live demo:** https://regdrift.onrender.com (free tier; the first load can take about a minute to wake)
+
+![RegDrift findings](findings.png)
 
 **When a regulator publishes a new circular, which of your automated workflows just became non-compliant?**
 RegDrift reads RBI circulars, extracts the checkable rules, finds the RPA bots (UiPath / Blue Prism style) they affect,
