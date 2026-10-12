@@ -1,0 +1,4 @@
+# Web app (webapp/). The core pipeline needs only requirements.txt.
+starlette>=0.37
+uvicorn>=0.30
+python-multipart>=0.0.9

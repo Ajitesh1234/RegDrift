@@ -109,19 +109,47 @@ First proof-of-concept run: 11 real RBI circulars, 33 clauses, 10 of which carry
 - Next step for a meaningful number: circulars on other topics (loans, reporting deadlines, limits), at least 30 rule-bearing clauses
   in the test set.
 
+## Web app
+
+A small web interface sits on top of the same pipeline: add a circular (PDF, text, or one of the bundled samples), see
+which bots are out of line, approve or dismiss each finding, then download a CSV or create the Jira tickets.
+Each finding shows a *drift line*: where the rule's limit is and where the bot's setting actually sits.
+
+Run it anywhere (Codespaces shows an "Open in Browser" prompt for the port):
+```
+pip install -r requirements.txt -r requirements-web.txt
+export GROQ_API_KEY=...            # optional; without it the keyword rules are used
+uvicorn webapp.app:app --port 8000
+```
+
+Safe to host publicly:
+- Checks never write to Jira. Creating tickets is off unless the host sets `APP_ACCESS_CODE` **and** the `JIRA_*` variables,
+  and the person must enter the code first.
+- Only an uploaded file, pasted text, or a listed sample is read. The app never fetches URLs.
+- Limits protect the free Groq quota: 10 checks per hour per visitor (`RATE_PER_HOUR`), 200 a day (`MAX_PER_DAY`),
+  2 at once, 6 MB per file.
+
+Deploy for free: on render.com choose **New > Web Service**, connect this repo, runtime **Docker**, free instance, and
+add `GROQ_API_KEY` (plus, only if you want ticketing, `JIRA_URL`, `JIRA_EMAIL`, `JIRA_TOKEN`, `JIRA_PROJECT`,
+`APP_ACCESS_CODE`). Free instances sleep when idle, so the first visit can take about a minute.
+
+The samples the page offers are listed in `circulars/samples.json`.
+
 ## Dashboard and Docker
-Every run also writes `reports/dashboard.html`, a self-contained page with severity counts and every finding with its
-Jira key. Open it in any browser, or run `python dashboard.py` to rebuild it from existing reports.
+Every command-line run also writes `reports/dashboard.html`, a self-contained page with severity counts and every
+finding with its Jira key. Rebuild it from existing reports with `python dashboard.py`.
 
 ```
 docker build -t regdrift .
-docker run --rm -e GROQ_API_KEY -v "$PWD/circulars:/app/circulars" regdrift circulars --dry-run
+docker run --rm -p 7860:7860 -e GROQ_API_KEY regdrift                      # web app
+docker run --rm -e GROQ_API_KEY regdrift python regdrift.py circulars --dry-run   # command line
 ```
 
 ## Project layout
 ```
 regdrift.py            pipeline + CLI (LangGraph graph, validation, retries, Jira, reports)
-dashboard.py           reports/*.json -> reports/dashboard.html (written after every run)
+dashboard.py           reports/*.json -> reports/dashboard.html (written after every command-line run)
+webapp/                web app: app.py (Starlette API) + static/ (hand-written HTML, CSS, JS)
 Dockerfile             container image (secrets via environment variables only)
 import_bot.py          UiPath Config.xlsx / CSV -> bots.json
 review.py              human review of tickets

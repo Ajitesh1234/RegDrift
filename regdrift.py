@@ -11,7 +11,7 @@ Optional libs: langgraph (graph runtime), chromadb (vector DB).
 
 Usage:  python regdrift.py circulars/some.pdf [--dry-run] [--fail-on-high]
 """
-import argparse, base64, hashlib, json, logging, math, os, re, sys, time
+import argparse, base64, hashlib, json, logging, math, os, re, sys, threading, time
 import urllib.error, urllib.request
 from collections import Counter
 from datetime import datetime, timezone
@@ -358,6 +358,7 @@ def canon_obligation(o) -> Dict[str, Any]:
     return {k: v[k] for k in LABEL_KEYS}
 
 
+OP_WORDS = {"<=": "at most", ">=": "at least", "==": "exactly", "contains": "includes"}
 CHANGE_CUE = re.compile(r"(?i)\b(henceforth|hereafter|shall now be|now be|revised to|reduced to|enhanced to|increased to|"
                         r"brought down to|lowered to|raised to)\b[^.\d]{0,60}?(?:usd|us\$|rs\.?|inr|\u20b9)?\s*(\d[\d,]*(?:\.\d+)?)")
 NUM_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
@@ -391,7 +392,9 @@ def fix_changed_limit(ob, text):
     olds = {_num(n) for n in NUM_RE.findall(body[:cue.start()])}
     if new is not None and new != val and val in olds:
         log.info("  [%s: extractor used old value %s, circular says it is now %s; corrected]", ob["clause"], val, cue.group(2))
-        return {**ob, "required_value": int(new) if float(new).is_integer() else new}
+        new = int(new) if float(new).is_integer() else new
+        note = f" Revised limit: {OP_WORDS.get(ob['operator'], ob['operator'])} {new}{(' ' + ob['unit']) if ob.get('unit') else ''}."
+        return {**ob, "required_value": new, "summary": (ob.get("summary", "") + note)[:400]}
     return ob
 
 
@@ -435,12 +438,16 @@ def cosine(a: Counter, b: Counter):
 def bot_doc(b): return f"{b['name']} {b['description']} {' '.join(b['tags'])}"
 
 
+_CHROMA_LOCK = threading.Lock()
+
+
 def retrieve_chroma(bots, query, k):
     import chromadb  # default embedding model downloads once, then runs locally
-    col = chromadb.Client().get_or_create_collection("bots", metadata={"hnsw:space": "cosine"})
-    if col.count() == 0:
-        col.add(ids=[b["id"] for b in bots], documents=[bot_doc(b) for b in bots])
-    res = col.query(query_texts=[query], n_results=k)
+    with _CHROMA_LOCK:  # the web app can run two checks at once; keep collection setup single-file
+        col = chromadb.Client().get_or_create_collection("bots", metadata={"hnsw:space": "cosine"})
+        if col.count() == 0:
+            col.add(ids=[b["id"] for b in bots], documents=[bot_doc(b) for b in bots])
+        res = col.query(query_texts=[query], n_results=k)
     return [(i, 1 - d) for i, d in zip(res["ids"][0], res["distances"][0])]  # cosine distance -> similarity
 
 
@@ -465,6 +472,8 @@ def retrieve(state: State) -> State:
                 hits[b["id"]] = 1.0
         # (b) semantic retrieval for bots without that parameter
         try:
+            if os.getenv("REGDRIFT_RETRIEVER", "").lower() == "bow":  # low-memory hosts: skip the vector DB
+                raise RuntimeError("vector search disabled")
             found = retrieve_chroma(bots, ob["summary"], 3)
         except Exception:
             found, kind = retrieve_bow(bots, ob["summary"], 3), "bow"
@@ -561,8 +570,13 @@ def judge(imp):
 
 
 def reason(state: State) -> State:
-    findings, skipped = [], []
+    findings, skipped, seen = [], [], set()
     for imp in state["impacts"]:
+        o = imp["obligation"]
+        sig = (imp["bot"]["id"], o["clause"], o["parameter"], o["operator"], str(o["required_value"]))
+        if sig in seen:  # the LLM sometimes splits one clause into twin rules; judge each distinct rule once
+            continue
+        seen.add(sig)
         j = judge(imp)
         base = {"bot_id": imp["bot"]["id"], "bot": imp["bot"]["name"], "platform": imp["bot"]["platform"],
                 "clause": imp["obligation"]["clause"], "rule": imp["obligation"]["summary"],

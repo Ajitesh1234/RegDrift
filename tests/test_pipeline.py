@@ -370,6 +370,10 @@ class ChangedLimitGuard(unittest.TestCase):
     def test_old_value_is_corrected_to_new(self):
         self.assertEqual(regdrift.fix_changed_limit(self.ob(100), self.TEXT)["required_value"], 5)
 
+    def test_summary_notes_the_revised_limit(self):
+        out = regdrift.fix_changed_limit(self.ob(100), self.TEXT)
+        self.assertIn("Revised limit: at most 5 usd million", out["summary"])
+
     def test_correct_value_untouched(self):
         self.assertEqual(regdrift.fix_changed_limit(self.ob(5), self.TEXT)["required_value"], 5)
 
@@ -404,3 +408,46 @@ class OwnerAndLabels(unittest.TestCase):
             regdrift.llm_json = orig
         self.assertEqual(r["status"], "not_applicable")
         self.assertEqual(calls, [])   # no LLM call needed
+
+
+class AddCirculars(unittest.TestCase):
+    def test_clean_name(self):
+        import add_circulars
+        self.assertEqual(add_circulars.clean_name("RBI Circular (KYC) 12-06-2025.PDF"), "rbi_circular_kyc_12_06_2025.pdf")
+
+    def test_zip_import_and_short_text_rejected(self):
+        import add_circulars, zipfile
+        tmp = tempfile.mkdtemp()
+        z = os.path.join(tmp, "c.zip")
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.writestr("Good One.txt", "1. KYC re-verification shall be done every 2 years. " * 20)
+            zf.writestr("tiny.txt", "short")
+        add_circulars.DEST = os.path.join(tmp, "dest")
+        rc = add_circulars.main([z])
+        self.assertEqual(sorted(os.listdir(add_circulars.DEST)), ["good_one.txt"])
+        self.assertEqual(rc, 2)
+
+
+class LowMemoryRetriever(unittest.TestCase):
+    def test_bow_switch_skips_chroma(self):
+        os.environ["REGDRIFT_RETRIEVER"] = "bow"
+        called = []
+        orig = regdrift.retrieve_chroma
+        regdrift.retrieve_chroma = lambda *a, **k: called.append(1)
+        try:
+            f = flagged("Clause 1: KYC re-verification of high-risk customers shall be done at least once every 2 years.")
+        finally:
+            regdrift.retrieve_chroma = orig
+            os.environ.pop("REGDRIFT_RETRIEVER")
+        self.assertEqual(called, [])
+        self.assertEqual(f[("KYC-Refresh-Bot", "Clause 1")]["status"], "violating")
+
+
+class TwinRules(unittest.TestCase):
+    def test_identical_rules_are_judged_once(self):
+        ob = {"clause": "Clause (c)", "summary": "cap", "parameter": "str_filing_days", "operator": "<=",
+              "required_value": 5, "unit": "days", "modality": "mandatory"}
+        bot = next(b for b in regdrift.load_bots() if b["name"] == "STR-Filer-Bot")
+        out = regdrift.reason({"impacts": [{"obligation": ob, "bot": bot, "score": 1.0},
+                                           {"obligation": dict(ob), "bot": bot, "score": 1.0}], "circular_ref": "R/1"})
+        self.assertEqual(len(out["findings"]), 1)

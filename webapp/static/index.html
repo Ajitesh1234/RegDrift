@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RegDrift</title>
+<meta name="description" content="Check a new RBI circular against your RPA bots and see which ones drifted out of line.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2312332F'/%3E%3Cpath d='M7 12h14M11 20h14' stroke='%23EDF1EE' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#check" aria-label="RegDrift home">
+      <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><rect width="32" height="32" rx="7" fill="currentColor"/><path d="M7 12h14M11 20h14" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"/></svg>
+      <span>RegDrift</span>
+    </a>
+    <nav class="tabs" aria-label="Sections">
+      <a href="#check" id="tab-check" class="tab">Check a circular</a>
+      <a href="#bots" id="tab-bots" class="tab">Bots <span id="bot-count" class="count"></span></a>
+    </nav>
+    <div class="top-end">
+      <span id="mode" class="mode" role="status"></span>
+      <button id="unlock-btn" class="link" type="button" hidden>Unlock ticketing</button>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section id="view-check" class="view" hidden>
+    <div class="work">
+      <aside class="input" aria-label="Circular">
+        <h2 class="h2">Circular</h2>
+        <label id="drop" class="drop" for="file">
+          <input id="file" type="file" accept=".pdf,.txt,application/pdf,text/plain">
+          <span class="drop-main">Drop a circular here</span>
+          <span class="drop-sub">PDF or text, up to 6 MB. Or <span class="underline">choose a file</span>.</span>
+        </label>
+        <p id="picked" class="picked" hidden></p>
+
+        <h3 class="h3">Or try one</h3>
+        <ul id="samples" class="samples"></ul>
+
+        <details class="paste">
+          <summary>Paste text instead</summary>
+          <label class="sr" for="paste-text">Circular text</label>
+          <textarea id="paste-text" rows="6" placeholder="Paste the clauses of a circular here"></textarea>
+        </details>
+
+        <button id="run" class="btn primary" type="button" disabled>Check against bots</button>
+        <p id="input-note" class="note"></p>
+
+      </aside>
+
+      <section class="out" aria-live="polite" aria-label="Results">
+        <div id="empty" class="empty"></div>
+        <div id="running" class="running" hidden></div>
+        <div id="failed" class="failed" hidden></div>
+        <div id="results" hidden></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="view-bots" class="view" hidden>
+    <div class="bots-in">
+      <h1 class="h1 small">Bots RegDrift knows about</h1>
+      <p class="lede">These are simulated bots for the demo. Each one lists the settings a rule can be checked against. In a real setup they come from your UiPath <code>Config.xlsx</code> or Blue Prism environment variables.</p>
+      <div id="bot-list" class="bot-list"></div>
+    </div>
+  </section>
+</main>
+
+<div id="bar" class="bar" hidden>
+  <div class="bar-in">
+    <p id="bar-text" class="bar-text"></p>
+    <div class="bar-actions">
+      <button id="csv" class="btn" type="button">Download CSV</button>
+      <button id="tickets" class="btn primary" type="button">Create tickets</button>
+    </div>
+  </div>
+</div>
+
+<dialog id="unlock" class="dialog">
+  <form method="dialog" id="unlock-form">
+    <h2 class="h2">Unlock ticketing</h2>
+    <p class="note">Creating Jira tickets needs the access code set on this deployment.</p>
+    <label for="code" class="label">Access code</label>
+    <input id="code" type="password" autocomplete="off">
+    <p id="unlock-err" class="err" role="alert"></p>
+    <div class="dialog-actions">
+      <button type="button" id="unlock-cancel" class="btn">Cancel</button>
+      <button type="submit" class="btn primary">Unlock</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
