@@ -49,6 +49,21 @@
    "parameters": {
     "legacy_switch": 1
    }
+  },
+  {
+   "id": "G-4",
+   "name": "Dates-Bot",
+   "platform": "UiPath",
+   "description": "Schedules go-lives.",
+   "tags": [
+    "dates"
+   ],
+   "parameters": {
+    "go_live_date": "2027-03-01",
+    "policy_date": "15 June 2027",
+    "bad_date": "soon",
+    "count": 3
+   }
   }
  ],
  "cases": [
@@ -546,6 +561,141 @@
     "modality": "mandatory"
    },
    "expect": "not_applicable"
+  },
+  {
+   "id": "date-before-deadline",
+   "note": "deadline 'by 31 March 2027', setting earlier",
+   "bot": "Dates-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "go_live_date <= 2027-03-31",
+    "parameter": "go_live_date",
+    "operator": "<=",
+    "required_value": "2027-03-31",
+    "unit": "date",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "date-on-deadline",
+   "note": "setting exactly on the deadline",
+   "bot": "Dates-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "go_live_date <= 2027-03-01",
+    "parameter": "go_live_date",
+    "operator": "<=",
+    "required_value": "2027-03-01",
+    "unit": "date",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "date-after-deadline",
+   "note": "setting later than the deadline",
+   "bot": "Dates-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "go_live_date <= 2027-02-28",
+    "parameter": "go_live_date",
+    "operator": "<=",
+    "required_value": "2027-02-28",
+    "unit": "date",
+    "modality": "mandatory"
+   },
+   "expect": "violating"
+  },
+  {
+   "id": "date-floor-ok",
+   "note": "'not earlier than', setting on the date",
+   "bot": "Dates-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "go_live_date >= 2027-03-01",
+    "parameter": "go_live_date",
+    "operator": ">=",
+    "required_value": "2027-03-01",
+    "unit": "date",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "date-floor-bad",
+   "note": "'not earlier than', setting before it",
+   "bot": "Dates-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "go_live_date >= 2027-04-01",
+    "parameter": "go_live_date",
+    "operator": ">=",
+    "required_value": "2027-04-01",
+    "unit": "date",
+    "modality": "mandatory"
+   },
+   "expect": "violating"
+  },
+  {
+   "id": "date-other-format",
+   "note": "setting written as '15 June 2027' is still read as a date",
+   "bot": "Dates-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "policy_date <= 2027-12-31",
+    "parameter": "policy_date",
+    "operator": "<=",
+    "required_value": "2027-12-31",
+    "unit": "date",
+    "modality": "mandatory"
+   },
+   "expect": "compliant"
+  },
+  {
+   "id": "date-not-a-date",
+   "note": "setting is text, cannot be compared",
+   "bot": "Dates-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "bad_date <= 2027-12-31",
+    "parameter": "bad_date",
+    "operator": "<=",
+    "required_value": "2027-12-31",
+    "unit": "date",
+    "modality": "mandatory"
+   },
+   "expect": "at_risk"
+  },
+  {
+   "id": "date-vs-number",
+   "note": "numeric setting against a date rule",
+   "bot": "Dates-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "count <= 2027-12-31",
+    "parameter": "count",
+    "operator": "<=",
+    "required_value": "2027-12-31",
+    "unit": "date",
+    "modality": "mandatory"
+   },
+   "expect": "at_risk"
+  },
+  {
+   "id": "date-permissive",
+   "note": "optional later date not adopted",
+   "bot": "Dates-Bot",
+   "obligation": {
+    "clause": "Clause (a)",
+    "summary": "go_live_date >= 2027-06-01",
+    "parameter": "go_live_date",
+    "operator": ">=",
+    "required_value": "2027-06-01",
+    "unit": "date",
+    "modality": "permissive"
+   },
+   "expect": "optional_gap"
   }
  ]
 }
