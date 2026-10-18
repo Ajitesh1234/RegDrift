@@ -33,6 +33,9 @@ class State(TypedDict, total=False):
     findings: List[Dict[str, Any]]
     skipped: List[Dict[str, Any]]
     tickets: List[Dict[str, Any]]
+    context: Dict[str, Any]
+    allow_withdrawn: bool
+    today: str
 
 
 def bots_path() -> str:
@@ -156,6 +159,36 @@ def lora_extract(clause_text: str):
 
 
 # ====================================================================== Node 1: ingest
+STAMP_MARK = "[[REGDRIFT-STAMP: "
+STAMP_RE = re.compile(r"(?i)\b(withdrawn|superseded|cancell?ed|rescinded|repealed|obsolete)\b")
+
+
+def _mul(a, b):
+    return [a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3], a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3]]
+
+
+def pdf_stamps(path: str, pages: int = 3) -> List[str]:
+    """Words like 'Withdrawn' that RBI prints diagonally across a page. Ordinary text extraction scrambles rotated
+    text into stray letters, so read only the slanted pieces. Body sentences are ignored on purpose: a live circular
+    often says 'circular X stands withdrawn' about some other document."""
+    found = set()
+    try:
+        from pypdf import PdfReader
+        for page in PdfReader(path).pages[:pages]:
+            pieces = []
+
+            def visit(text, cm, tm, font_dict, font_size):
+                if text and text.strip():
+                    m = _mul(tm, cm)
+                    if abs(m[1]) > 0.2 or abs(m[2]) > 0.2:
+                        pieces.append(text.strip())
+            page.extract_text(visitor_text=visit)
+            found.update(w.lower() for w in STAMP_RE.findall("".join(pieces)))
+    except Exception as e:  # a stamp check must never stop an analysis
+        log.warning("  [could not check %s for a withdrawn stamp: %s]", path, e)
+    return sorted(found)
+
+
 def load_text(src: str) -> str:
     """Read a .txt, .pdf or http(s) URL (txt/pdf) into plain text."""
     if src.startswith("http"):
@@ -170,7 +203,9 @@ def load_text(src: str) -> str:
         return data.decode("utf-8", "ignore")
     if src.lower().endswith(".pdf"):
         from pypdf import PdfReader
-        return "\n".join((p.extract_text() or "") for p in PdfReader(src).pages)
+        text = "\n".join((p.extract_text() or "") for p in PdfReader(src).pages)
+        stamps = pdf_stamps(src)
+        return f"{STAMP_MARK}{', '.join(stamps)}]]\n{text}" if stamps else text
     with open(src, encoding="utf-8") as fh:
         return fh.read()
 
@@ -214,11 +249,18 @@ def find_ref(text: str) -> str:
 
 def ingest(state: State) -> State:
     text = state.get("circular_text") or load_text(os.path.join(HERE, "circular_sample.txt"))
+    stamps = []
+    if text.startswith(STAMP_MARK):
+        head, _, text = text.partition("]]\n")
+        stamps = [w.strip() for w in head[len(STAMP_MARK):].split(",") if w.strip()]
     text = clean(text)
     if len(text) < 40:
         raise ValueError("circular has no readable text (scanned PDF? try OCR first)")
-    log.info("[1/5] Ingested circular (%d chars)", len(text))
-    return {"circular_text": text, "circular_ref": find_ref(text)}
+    ctx = circular_context(text, stamps, state.get("today"))
+    log.info("[1/5] Ingested circular (%d chars). %s", len(text), ctx["headline"])
+    for w in ctx["warnings"]:
+        log.warning("  [%s]", w)
+    return {"circular_text": text, "circular_ref": find_ref(text), "context": ctx}
 
 
 # ====================================================================== Node 2: obligation extraction
@@ -235,6 +277,8 @@ Where the rule concerns one of these existing bot settings, reuse that exact par
 {params}
 Use "<=" for maximums ("not exceed", "up to", "within", "not more than"), ">=" for minimums ("at least", "not less than"),
 and "==" only for exact values or yes/no rules.
+For a deadline or calendar date, give required_value as an ISO string "YYYY-MM-DD" with unit "date":
+"<=" for "by / on or before", ">=" for "on or after / not earlier than". Durations ("within 30 days") stay numbers.
 If the circular changes an old limit to a new one, use the NEW value. Skip clauses with no checkable rule.
 <circular>
 {text}
@@ -250,6 +294,8 @@ Return ONLY a JSON list, or [] if the clause states no checkable rule. Each item
 modality is "mandatory" for shall/must/not permitted, and "permissive" for may/is permitted/allowed.
 Use "<=" for maximums ("not exceed", "up to", "within", "not more than"), ">=" for minimums ("at least", "not less than"),
 and "==" only for exact values or yes/no rules.
+For a deadline or calendar date, give required_value as an ISO string "YYYY-MM-DD" with unit "date":
+"<=" for "by / on or before", ">=" for "on or after / not earlier than". Durations ("within 30 days") stay numbers.
 If the clause changes an old limit to a new one, use the NEW value.
 Where the rule concerns one of these existing bot settings, reuse that exact parameter name:
 {params}
@@ -305,6 +351,126 @@ def _as_list(x):
     return x if isinstance(x, list) else []
 
 
+MONTHS = {m: i for i, m in enumerate(
+    "january february march april may june july august september october november december".split(), 1)}
+DATE_FORMS = (
+    re.compile(r"^(?P<y>\d{4})-(?P<m>\d{1,2})-(?P<d>\d{1,2})$"),                              # 2027-03-31
+    re.compile(r"^(?P<d>\d{1,2})[./-](?P<m>\d{1,2})[./-](?P<y>\d{4})$"),                      # 31/03/2027 (day first, as in India)
+    re.compile(r"^(?P<d>\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(?P<m>[A-Za-z]{3,9})\.?,?\s+(?P<y>\d{4})$"),  # 31 March 2027
+    re.compile(r"^(?P<m>[A-Za-z]{3,9})\.?\s+(?P<d>\d{1,2})(?:st|nd|rd|th)?,?\s+(?P<y>\d{4})$"),            # March 31, 2027
+)
+
+
+def parse_date(s):
+    """'31 March 2027', '31/03/2027', '2027-03-31' -> '2027-03-31'; None if it is not a real calendar date."""
+    if not isinstance(s, str):
+        return None
+    s = s.strip()
+    for rx in DATE_FORMS:
+        m = rx.match(s)
+        if not m:
+            continue
+        mon = m.group("m")
+        if not mon.isdigit():
+            mon = next((n for name, n in MONTHS.items() if name.startswith(mon.lower()) and len(mon) >= 3), None)
+            if mon is None:
+                continue
+        try:
+            return datetime(int(m.group("y")), int(mon), int(m.group("d"))).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
+# ====================================================================== time context
+_MON = "|".join(sorted(MONTHS, key=len, reverse=True)) + "|" + "|".join(m[:3] for m in MONTHS)
+DATE_TXT = (r"(?:(?:%s)\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}|\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:%s)\.?,?\s+\d{4}"
+            r"|\d{1,2}[./-]\d{1,2}[./-]\d{4})") % (_MON, _MON)
+DATE_FIND = re.compile(DATE_TXT, re.I)
+EFFECT_RE = re.compile(r"(?i)(?:come|comes|came|coming)\s+into\s+(?:effect|force)\s+(?:with\s+effect\s+)?(?:from|on)\s+(%s)"
+                       r"|with\s+effect\s+from\s+(%s)|effective\s+from\s+(%s)" % (DATE_TXT, DATE_TXT, DATE_TXT))
+GENERAL_RE = re.compile(r"(?i)\b(?:these|this|the)\s+(?:[a-z]+\s+){0,4}?(?:directions?|circular|instructions|guidelines|regulations)\s+"
+                        r"(?:[a-z]+\s+){0,3}?comes?\s+into\s+(?:effect|force)\s+(?:with\s+effect\s+)?(?:from|on)\s+(%s)" % DATE_TXT)
+IMMEDIATE_RE = re.compile(r"(?i)(?:come|comes|coming)\s+into\s+(?:effect|force)\s+with\s+immediate\s+effect|with\s+immediate\s+effect")
+UNTIL_RE = re.compile(r"(?i)\b(?:till|until|up\s?to)\s+(%s)" % DATE_TXT)
+UPDATED_RE = re.compile(r"(?i)updated\s+as\s+on\s+(%s)" % DATE_TXT)
+OLD_AFTER_YEARS = 3
+
+
+def _first_date(text):
+    """First real date in the header. Skips look-alikes inside reference numbers (13.03.00/2026) and dates that follow
+    'dated', which name a different, older document."""
+    for m in DATE_FIND.finditer(text):
+        if re.search(r"(?i)\bdated\s*:?\s*$", text[max(0, m.start() - 12):m.start()]):
+            continue
+        d = parse_date(m.group(0))
+        if d:
+            return d
+    return None
+
+
+def circular_context(text: str, stamps=(), today=None) -> Dict[str, Any]:
+    """When was this issued, is it in force today, has it been withdrawn? Pure text and date reading (no LLM), so it is
+    testable. Status, strongest first: withdrawn (stamped) > expired (a temporary measure that has ended) >
+    upcoming (every effective date is still ahead) > in_force."""
+    from datetime import date
+    today_d = date.fromisoformat(today) if isinstance(today, str) else (today or datetime.now(timezone.utc).date())
+    iso = lambda d: d.isoformat()
+    issued = _first_date(text[:1500])
+    as_of = max([d for d in (parse_date(m.group(1)) for m in UPDATED_RE.finditer(text)) if d] + ([issued] if issued else []),
+                default=None)
+    effective = set()
+    for m in EFFECT_RE.finditer(text):
+        d = parse_date(next(g for g in m.groups() if g))
+        if d:
+            effective.add(d)
+    immediate = bool(IMMEDIATE_RE.search(text))
+    if immediate and issued:
+        effective.add(issued)
+    until = set()
+    for m in UNTIL_RE.finditer(text):
+        near = text[max(0, m.start() - 250):m.end() + 100].lower()
+        d = parse_date(m.group(1))
+        if d and ("temporar" in near or "period" in near):
+            until.add(d)
+    effective, until = sorted(effective), sorted(until)
+    general = sorted(d for d in (parse_date(m.group(1)) for m in GENERAL_RE.finditer(text)) if d)
+    commences = general[0] if general else (issued if immediate else None)  # when the circular as a whole starts
+    warnings, status = [], "in_force"
+    stamps = sorted(set(stamps))
+    if stamps:
+        status = "withdrawn"
+    elif until and until[-1] < iso(today_d):
+        status = "expired"
+    elif commences and commences > iso(today_d):
+        status = "upcoming"
+    later = [e for e in effective if e > iso(today_d) and e != commences]
+    if status == "in_force" and later:
+        warnings.append("Some provisions start later (%s); the rest are already in force." % ", ".join(later))
+    age = None
+    if as_of:
+        age = round((today_d - date.fromisoformat(as_of)).days / 365.25, 1)
+        if age >= OLD_AFTER_YEARS and status != "withdrawn":
+            warnings.append("This circular is %.0f years old (as of %s). RBI may have amended or replaced it; confirm on rbi.org.in "
+                            "before acting." % (age, as_of))
+    else:
+        warnings.append("No issue date found, so timing could not be checked.")
+    nice = lambda d: date.fromisoformat(d).strftime("%d %B %Y").lstrip("0") if d else ""
+    headline = {
+        "withdrawn": "Marked %s by RBI. It is no longer in force, so nothing was checked and no tickets were filed." % "/".join(stamps),
+        "expired": "A temporary measure that ran until %s has ended, so no tickets were filed." % nice(until[-1] if until else ""),
+        "upcoming": "Not in force yet. It takes effect on %s." % nice(commences),
+        "in_force": "In force" + (" since %s." % nice(commences) if commences and commences <= iso(today_d) else "."),
+    }[status]
+    return {"status": status, "headline": headline, "issued": issued, "as_of": as_of, "commences": commences, "effective_dates": effective,
+            "valid_until": until[-1] if until else None, "stamps": stamps, "age_years": age, "warnings": warnings,
+            "checked_on": iso(today_d)}
+
+
+def _blocked(state) -> bool:
+    return (state.get("context") or {}).get("status") == "withdrawn" and not state.get("allow_withdrawn")
+
+
 def validate_obligation(o, default_clause="", default_summary=""):
     """Never trust LLM output: return a clean obligation dict, or None if it is unusable."""
     if not isinstance(o, dict):
@@ -313,7 +479,7 @@ def validate_obligation(o, default_clause="", default_summary=""):
     op = str(o.get("operator", "")).strip()
     if not param or op not in ALLOWED_OPS:
         return None
-    val = o.get("required_value")
+    val, is_date = o.get("required_value"), False
     if op == "contains":
         if val is None or isinstance(val, (dict, list, bool)):
             return None
@@ -335,14 +501,17 @@ def validate_obligation(o, default_clause="", default_summary=""):
             try:
                 val = float(v)
             except ValueError:
-                return None
+                val = parse_date(v)  # deadline rules: "by 31 March 2027"
+                if val is None or op == "contains":
+                    return None
+                is_date = True
     else:
         return None
     modality = "permissive" if str(o.get("modality", "")).lower().startswith("perm") else "mandatory"
     return {"clause": norm_clause(o.get("clause") or default_clause),
             "summary": str(o.get("summary") or default_summary)[:400],
             "parameter": param, "operator": op, "required_value": val,
-            "unit": str(o.get("unit") or "")[:30], "modality": modality}
+            "unit": "date" if is_date else str(o.get("unit") or "")[:30], "modality": modality}
 
 
 LABEL_KEYS = ("parameter", "operator", "required_value", "unit", "modality")
@@ -399,6 +568,9 @@ def fix_changed_limit(ob, text):
 
 
 def extract(state: State) -> State:
+    if _blocked(state):
+        log.info("[2/5] Skipped: %s", state["context"]["headline"])
+        return {"obligations": [], "extractor": "skipped"}
     text, raw, backend = state["circular_text"], [], "rules"
     if os.getenv("LORA_ADAPTER"):
         for label, body in split_units(text):
@@ -537,6 +709,11 @@ def judge(imp):
         try:
             if op != "contains" and isinstance(cur, bool) != isinstance(req, bool):
                 raise TypeError("yes/no value compared with a number")  # Python says True == 1; a check must not
+            if op != "contains" and isinstance(req, str):  # deadline rule: compare calendar dates, not text
+                cur_date = parse_date(cur)
+                if cur_date is None:
+                    raise TypeError("setting is not a date")
+                cur = cur_date
             if op == "contains":
                 items = cur if isinstance(cur, list) else [cur]
                 ok = any(same_item(req, x) for x in items)
@@ -582,7 +759,9 @@ def reason(state: State) -> State:
         j = judge(imp)
         base = {"bot_id": imp["bot"]["id"], "bot": imp["bot"]["name"], "platform": imp["bot"]["platform"],
                 "clause": imp["obligation"]["clause"], "rule": imp["obligation"]["summary"],
-                "obligation": imp["obligation"], "ref": state.get("circular_ref", "")}
+                "obligation": imp["obligation"], "ref": state.get("circular_ref", ""),
+                "timing": (state.get("context") or {}).get("status", "in_force"),
+                "effective_from": (state.get("context") or {}).get("commences")}
         if j["status"] == "not_applicable":
             log.info("  (skipped %s / %s: not applicable)", base["bot"], base["clause"])
             skipped.append({**base, **j})
@@ -644,6 +823,8 @@ def jira_existing():
 def jira_create(f):
     text = (f"{f['clause']}: {f['rule']}\n\nStatus: {f['status']} (confidence {f['confidence']})\n"
             f"Reason: {f['reason']}\nBot: {f['bot']} [{f['platform']}]\nCircular: {f.get('ref') or 'n/a'}")
+    if f.get("timing") == "upcoming" and f.get("effective_from"):
+        text += f"\nTiming: not in force yet; takes effect {f['effective_from']}. Update the bot before then."
     body = {"fields": {"project": {"key": os.getenv("JIRA_PROJECT")}, "issuetype": {"name": "Task"},
                        "summary": ticket_summary(f), "labels": ["regdrift"],
                        "description": {"type": "doc", "version": 1, "content": [
@@ -664,7 +845,9 @@ def act(state: State) -> State:
         if f["status"] == "compliant":
             continue
         t = {"severity": SEVERITY[f["status"]], **f, "decision": None}
-        if live and ticket_key(f["bot"], f["clause"], f.get("ref")) in existing:
+        if f.get("timing") == "expired":
+            t["jira_key"] = "NOT FILED (temporary measure has ended)"
+        elif live and ticket_key(f["bot"], f["clause"], f.get("ref")) in existing:
             t["jira_key"] = "SKIPPED (already in Jira)"
         else:
             try:
@@ -672,7 +855,7 @@ def act(state: State) -> State:
             except Exception as e:
                 t["jira_key"] = f"FAILED: {e}"
         tickets.append(t)
-    new = sum(1 for t in tickets if not t["jira_key"].startswith(("DRY-RUN", "SKIPPED", "FAILED")))
+    new = sum(1 for t in tickets if not t["jira_key"].startswith(("DRY-RUN", "SKIPPED", "FAILED", "NOT FILED")))
     skipped = sum(1 for t in tickets if t["jira_key"].startswith("SKIPPED"))
     log.info("[5/5] %d findings: %d new Jira tickets, %d already existed" % (len(tickets), new, skipped) if live
              else "[5/5] %d findings (dry-run, no Jira tickets created)" % len(tickets))
@@ -711,6 +894,7 @@ def build_report(state: State, source: str) -> Dict[str, Any]:
         "circular_ref": state.get("circular_ref", ""),
         "circular_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
         "extractor": state.get("extractor", ""),
+        "context": state.get("context", {}),
         "llm_model": active_model(),
         "jira_enabled": jira_ready() and not state.get("dry_run"),
         "counts": {"obligations": len(state.get("obligations", [])), "findings": len(state.get("findings", [])),
@@ -740,6 +924,7 @@ def main(argv=None) -> int:
     ap.add_argument("--report-dir", default=os.path.join(HERE, "reports"), help="where per-circular audit reports go")
     ap.add_argument("--tickets", default=os.path.join(HERE, "tickets.json"), help="combined ticket list for review.py")
     ap.add_argument("--fail-on-high", action="store_true", help="exit 2 if any High-severity finding (CI gate)")
+    ap.add_argument("--allow-withdrawn", action="store_true", help="analyse a circular even if it is stamped withdrawn")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s",
@@ -750,7 +935,8 @@ def main(argv=None) -> int:
         name = src or "circular_sample.txt"
         log.info("\n=== %s ===", name)
         try:
-            state = run({"circular_text": load_text(src) if src else "", "source": name, "dry_run": args.dry_run})
+            state = run({"circular_text": load_text(src) if src else "", "source": name, "dry_run": args.dry_run,
+                         "allow_withdrawn": args.allow_withdrawn})
         except Exception as e:
             log.error("ERROR processing %s: %s", name, e)
             rc = max(rc, 1)
