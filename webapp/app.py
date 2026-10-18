@@ -105,6 +105,7 @@ def _run_job(job, text, name):
             "sha256": report["circular_sha256"], "extractor": state.get("extractor", ""),
             "model": report["llm_model"], "run_at": report["run_at_utc"],
             "obligations": state.get("obligations", []),
+            "context": state.get("context") or {},
             "skipped_not_applicable": len(state.get("skipped", [])),
             "findings": [_public_finding(i, r) for i, r in enumerate(rows)],
         }
