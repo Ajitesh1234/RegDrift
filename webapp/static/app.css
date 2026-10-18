@@ -152,6 +152,14 @@ textarea { resize: vertical; margin-top: 8px; font-size: 14px; }
 .fine { margin-top: 28px; }
 .fine summary { cursor: pointer; font-weight: 600; color: var(--ink-2); padding: 6px 0; }
 .empty-note { color: var(--ink-2); padding: 28px 0; }
+.notice { max-width: 70ch; margin: 0 0 24px; padding: 12px 16px; border-left: 3px solid var(--med); background: var(--paper-2); }
+.notice b { display: block; font-size: 13px; letter-spacing: 0.02em; margin-bottom: 2px; }
+.notice p { margin: 2px 0 0; color: var(--ink-2); }
+.notice.stop { border-left-color: var(--high); }
+.notice.stop b { color: var(--high); }
+.notice.soon { border-left-color: var(--low); }
+.notice.soon b { color: var(--low); }
+.notice.warn b { color: var(--med); }
 
 /* ---------- drift line ---------- */
 .drift { position: relative; height: 74px; margin: 16px 8px 4px 0; max-width: 640px; }
