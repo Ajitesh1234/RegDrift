@@ -675,3 +675,60 @@ class LongCircular(unittest.TestCase):
         self.assertGreater(st["coverage"]["sections"], st["coverage"]["answered"])
         os.environ.pop("GROQ_API_KEY", None)  # no key = keyword mode: nothing was "missed", so no coverage claim
         self.assertEqual(regdrift.extract({"circular_text": self.long_text(n=400)})["coverage"], {})
+
+
+class PercentAndMatchChecks(unittest.TestCase):
+    def setUp(self):
+        self.orig = regdrift.llm_json
+
+    def tearDown(self):
+        regdrift.llm_json = self.orig
+
+    def ob(self, **kw):
+        return {"clause": "Clause (a)", "summary": "", "parameter": "x", "operator": "==", "required_value": 1,
+                "unit": "", "modality": "mandatory", **kw}
+
+    def test_percent_written_as_a_fraction_is_restored(self):
+        o = regdrift.fix_percent(self.ob(summary="rho must be set to 50 %.", required_value=0.5, unit="percent"))
+        self.assertEqual(o["required_value"], 50)
+        o = regdrift.fix_percent(self.ob(summary="discount rate must be 2.5 per cent", required_value=0.025, unit="percent"))
+        self.assertEqual(o["required_value"], 2.5)
+
+    def test_percent_left_alone_when_already_right_or_unrelated(self):
+        for o in (self.ob(summary="set to 50 %", required_value=50, unit="percent"),
+                  self.ob(summary="multiply by 0.7", required_value=0.7, unit="ratio"),
+                  self.ob(summary="must be 50 % of capital", required_value=0.7, unit="percent")):
+            self.assertEqual(regdrift.fix_percent(o), o)
+
+    def test_name_only_match_is_unlinked_but_real_match_is_kept(self):
+        calls = []
+        regdrift.llm_json = lambda p: calls.append(p) or {"concerns_setting": False}
+        cva = self.ob(parameter="capture_hedge_undertaking", operator="==", required_value=False,
+                      summary="Banks must not recognize CVA hedges.")
+        out = regdrift.verify_matches([cva])
+        self.assertTrue(out[0]["parameter"].startswith("unmapped_"))
+        self.assertEqual(out[0]["summary"], cva["summary"])
+        self.assertEqual(len(calls), 1)
+        fx = self.ob(parameter="allow_rebook_cancelled_contracts", required_value=False,
+                     summary="Authorised Dealers must not permit users to rebook any cancelled contract.")
+        calls.clear()
+        self.assertEqual(regdrift.verify_matches([fx]), [fx])  # the name is fully covered by the rule: no extra request
+        self.assertEqual(calls, [])
+
+    def test_a_failed_or_positive_check_never_drops_a_match(self):
+        cva = self.ob(parameter="capture_hedge_undertaking", summary="Banks must not recognize CVA hedges.")
+        for answer in (None, {"concerns_setting": True}, "garbage", {}):
+            regdrift.llm_json = lambda p, a=answer: a
+            self.assertEqual(regdrift.verify_matches([cva]), [cva])
+
+    def test_unknown_parameter_is_never_checked(self):
+        regdrift.llm_json = lambda p: self.fail("no request expected")
+        o = self.ob(parameter="cva_correlation", summary="rho is 50 %")
+        self.assertEqual(regdrift.verify_matches([o]), [o])
+
+    def test_same_pair_is_asked_once(self):
+        calls = []
+        regdrift.llm_json = lambda p: calls.append(p) or {"concerns_setting": False}
+        o = self.ob(parameter="capture_hedge_undertaking", summary="Banks must not recognize CVA hedges.")
+        regdrift.verify_matches([o, dict(o), dict(o)])
+        self.assertEqual(len(calls), 1)
