@@ -11,7 +11,7 @@ Optional libs: langgraph (graph runtime), chromadb (vector DB).
 
 Usage:  python regdrift.py circulars/some.pdf [--dry-run] [--fail-on-high]
 """
-import argparse, base64, hashlib, json, logging, math, os, re, sys, threading, time
+import argparse, base64, contextvars, hashlib, json, logging, math, os, re, sys, threading, time
 import urllib.error, urllib.request
 from collections import Counter
 from datetime import datetime, timezone
@@ -35,6 +35,8 @@ class State(TypedDict, total=False):
     tickets: List[Dict[str, Any]]
     context: Dict[str, Any]
     coverage: Dict[str, Any]
+    unchecked: int
+    on_progress: Any
     allow_withdrawn: bool
     today: str
 
@@ -60,8 +62,23 @@ def _retry_after(err) -> float:
         return 0.0
 
 
-def _retry(fn, tries: int = 4, base: float = 2.0):
-    """Call fn(); retry rate limits / server errors / network blips with exponential backoff."""
+# One time limit for a whole check. Free-tier rate limits can make every request wait a minute, and dozens of requests
+# would then run for hours. Every request and every retry wait respects this deadline; what is left unchecked is reported.
+JOB_BUDGET_SECONDS = float(os.getenv("REGDRIFT_JOB_BUDGET", "360"))
+_llm_deadline: "contextvars.ContextVar" = contextvars.ContextVar("regdrift_llm_deadline", default=None)
+
+
+def start_job_clock(seconds=None):
+    _llm_deadline.set(time.monotonic() + (JOB_BUDGET_SECONDS if seconds is None else seconds))
+
+
+def out_of_time() -> bool:
+    d = _llm_deadline.get()
+    return d is not None and time.monotonic() >= d
+
+
+def _retry(fn, tries: int = 4, base: float = 2.0, deadline=None):
+    """Call fn(); retry rate limits / server errors / network blips with exponential backoff, but never past `deadline`."""
     for attempt in range(tries):
         try:
             return fn()
@@ -70,10 +87,14 @@ def _retry(fn, tries: int = 4, base: float = 2.0):
                 raise
             wait = _retry_after(e) or base * (2 ** attempt)
             why = f"HTTP {e.code}"
+            if deadline is not None and time.monotonic() + min(wait, 60) >= deadline:
+                raise
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             if attempt == tries - 1:
                 raise
             wait, why = base * (2 ** attempt), type(e).__name__
+            if deadline is not None and time.monotonic() + min(wait, 60) >= deadline:
+                raise
         log.warning("  [%s, retrying in %.0fs (%d/%d)]", why, min(wait, 60), attempt + 1, tries - 1)
         _sleep(min(wait, 60))
 
@@ -92,14 +113,16 @@ def _groq_chat(key, model, prompt):
         {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
          "User-Agent": f"regdrift/{__version__} (+https://github.com/Ajitesh1234/RegDrift)",
          "Accept": "application/json"})
-    out = json.load(_retry(lambda: urllib.request.urlopen(req, timeout=90)))
+    deadline = _llm_deadline.get()
+    timeout = 90 if deadline is None else max(5.0, min(90.0, deadline - time.monotonic()))
+    out = json.load(_retry(lambda: urllib.request.urlopen(req, timeout=timeout), deadline=deadline))
     return out["choices"][0]["message"]["content"]
 
 
 def llm_json(prompt: str):
     """Ask Groq for JSON. Tries several models; uses the first one the account can access."""
     key = os.getenv("GROQ_API_KEY")
-    if not key:
+    if not key or out_of_time():
         return None
     models = [os.getenv("GROQ_MODEL")] if os.getenv("GROQ_MODEL") else (
         [_groq["model"]] if "model" in _groq else GROQ_MODELS)
@@ -280,6 +303,7 @@ def ingest(state: State) -> State:
     text = clean(text)
     if len(text) < 40:
         raise ValueError("circular has no readable text (scanned PDF? try OCR first)")
+    start_job_clock()
     ctx = circular_context(text, stamps, state.get("today"))
     log.info("[1/5] Ingested circular (%d chars). %s", len(text), ctx["headline"])
     for w in ctx["warnings"]:
@@ -676,6 +700,7 @@ def fix_changed_limit(ob, text):
 
 CHUNK_CHARS = 6000   # about 1,500 tokens: well inside a free-tier Groq request, with room for the prompt and reply
 MAX_CHUNKS = 14
+EXTRACT_BUDGET_SECONDS = float(os.getenv("REGDRIFT_EXTRACT_BUDGET", "240"))  # stop reading more sections after this
 
 
 def chunk_text(text: str, limit: int = CHUNK_CHARS) -> List[str]:
@@ -697,7 +722,7 @@ def chunk_text(text: str, limit: int = CHUNK_CHARS) -> List[str]:
     return [c for c in chunks if c.strip()]
 
 
-def llm_extract_text(text: str, stats=None):
+def llm_extract_text(text: str, stats=None, on_progress=None):
     """Whole-circular extraction through the LLM. Long circulars go in pieces; pieces with no obligation wording
     (titles, annexures, forms) are skipped. Returns None if no piece could be answered, so the fallback runs."""
     pieces = [c for c in chunk_text(text) if OBLIGATION_HINT.search(c)]
@@ -705,8 +730,16 @@ def llm_extract_text(text: str, stats=None):
     if len(pieces) > MAX_CHUNKS:
         log.warning("  [circular is very long: reading the first %d of %d sections]", MAX_CHUNKS, len(pieces))
         pieces = pieces[:MAX_CHUNKS]
-    raw, answered = [], 0
+    raw, answered, attempted, stopped = [], 0, 0, False
+    started = time.monotonic()
     for i, piece in enumerate(pieces, 1):
+        if i > 1 and time.monotonic() - started > EXTRACT_BUDGET_SECONDS:
+            log.warning("  [time budget reached: stopped after %d of %d sections]", i - 1, len(pieces))
+            stopped = True
+            break
+        if on_progress:
+            on_progress(i, len(pieces))
+        attempted += 1
         r = llm_json(PROMPT_EXTRACT.format(text=piece, params=known_params()))
         if r is None:
             log.warning("  [section %d of %d could not be read by the LLM]", i, len(pieces))
@@ -716,7 +749,7 @@ def llm_extract_text(text: str, stats=None):
     if len(pieces) > 1:
         log.info("  [read %d of %d sections]", answered, len(pieces))
     if stats is not None:  # lets the report and the web page say how much of the circular was really read
-        stats.update(sections=total, sent=len(pieces), answered=answered)
+        stats.update(sections=total, sent=attempted, answered=answered, stopped=stopped)
     return raw if answered else None
 
 
@@ -735,7 +768,7 @@ def extract(state: State) -> State:
         else:
             backend = "lora"
     if backend != "lora":
-        llm = llm_extract_text(text, coverage)
+        llm = llm_extract_text(text, coverage, state.get("on_progress"))
         if llm is not None:
             raw, backend = llm, "llm"
     if backend == "rules" or (backend == "llm" and not raw):
@@ -912,6 +945,9 @@ def judge(imp):
         # related is not the owner. Asking the LLM here only produces noise.
         return {"status": "not_applicable", "confidence": 0.8,
                 "reason": f"'{param}' is tracked by another bot; this bot does not own it."}
+    if out_of_time() and os.getenv("GROQ_API_KEY"):
+        return {"status": "not_applicable", "confidence": 0.0, "unchecked": True,
+                "reason": "Not checked: the time limit for this check was reached."}
     r = llm_json(PROMPT_REASON.format(rule=ob["summary"], bot=bot["name"], platform=bot["platform"],
                                       desc=bot["description"], params=bot["parameters"]))
     if isinstance(r, dict) and r.get("status") in STATUSES:
@@ -935,8 +971,11 @@ def judge(imp):
 
 
 def reason(state: State) -> State:
-    findings, skipped, seen = [], [], set()
-    for imp in state["impacts"]:
+    findings, skipped, seen, unchecked = [], [], set(), 0
+    progress = state.get("on_progress")
+    for n, imp in enumerate(state["impacts"], 1):
+        if progress:
+            progress(n, len(state["impacts"]))
         o = imp["obligation"]
         sig = (imp["bot"]["id"], o["clause"], o["parameter"], o["operator"], str(o["required_value"]))
         if sig in seen:  # the LLM sometimes splits one clause into twin rules; judge each distinct rule once
@@ -948,13 +987,18 @@ def reason(state: State) -> State:
                 "obligation": imp["obligation"], "ref": state.get("circular_ref", ""),
                 "timing": (state.get("context") or {}).get("status", "in_force"),
                 "effective_from": (state.get("context") or {}).get("commences")}
+        if j.get("unchecked"):
+            unchecked += 1
         if j["status"] == "not_applicable":
-            log.info("  (skipped %s / %s: not applicable)", base["bot"], base["clause"])
+            log.info("  (skipped %s / %s: %s)", base["bot"], base["clause"],
+                     "not checked, out of time" if j.get("unchecked") else "not applicable")
             skipped.append({**base, **j})
             continue
         findings.append({**base, **j})
+    if unchecked:
+        log.warning("  [time limit reached: %d rule and bot pair(s) were not checked]", unchecked)
     log.info("[4/5] Judged %d findings", len(findings))
-    return {"findings": findings, "skipped": skipped}
+    return {"findings": findings, "skipped": skipped, "unchecked": unchecked}
 
 
 # ====================================================================== Node 5: Jira
@@ -1082,6 +1126,7 @@ def build_report(state: State, source: str) -> Dict[str, Any]:
         "extractor": state.get("extractor", ""),
         "context": state.get("context", {}),
         "coverage": state.get("coverage", {}),
+        "unchecked": state.get("unchecked", 0),
         "llm_model": active_model(),
         "jira_enabled": jira_ready() and not state.get("dry_run"),
         "counts": {"obligations": len(state.get("obligations", [])), "findings": len(state.get("findings", [])),
