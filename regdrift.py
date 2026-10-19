@@ -17,7 +17,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Dict, List, TypedDict
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 log = logging.getLogger("regdrift")
 
@@ -34,6 +34,7 @@ class State(TypedDict, total=False):
     skipped: List[Dict[str, Any]]
     tickets: List[Dict[str, Any]]
     context: Dict[str, Any]
+    coverage: Dict[str, Any]
     allow_withdrawn: bool
     today: str
 
@@ -161,31 +162,54 @@ def lora_extract(clause_text: str):
 # ====================================================================== Node 1: ingest
 STAMP_MARK = "[[REGDRIFT-STAMP: "
 STAMP_RE = re.compile(r"(?i)\b(withdrawn|superseded|cancell?ed|rescinded|repealed|obsolete)\b")
+STAMP_ANY = re.compile(r"(?i)(withdrawn|superseded|cancell?ed|rescinded|repealed|obsolete)")
 
 
 def _mul(a, b):
     return [a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3], a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3]]
 
 
+def _slanted_words_pypdf(path: str, pages: int):
+    from pypdf import PdfReader
+    for page in PdfReader(path).pages[:pages]:
+        pieces = []
+
+        def visit(text, cm, tm, font_dict, font_size):
+            if text and text.strip():
+                m = _mul(tm, cm)
+                if abs(m[1]) > 0.2 or abs(m[2]) > 0.2:
+                    pieces.append(text.strip())
+        page.extract_text(visitor_text=visit)
+        yield "".join(pieces)
+
+
+def _slanted_words_pdfplumber(path: str, pages: int):
+    import pdfplumber  # second, independent reader: works from each character's own transform
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages[:pages]:
+            yield "".join(c["text"] for c in page.chars
+                          if abs(c["matrix"][1]) > 0.2 or abs(c["matrix"][2]) > 0.2)
+
+
+def _stamp_words(pieces) -> set:
+    """Stamp words in slanted text. Glyphs of repeated stamps run together ('WithdrawnWithdrawn' when the word is on
+    every page or twice on one), so there are no word boundaries to rely on: search each page's text on its own
+    without them. Slanted text is rare and short, so this does not pick up ordinary prose."""
+    return {w.lower() for piece in pieces for w in STAMP_ANY.findall(piece)}
+
+
 def pdf_stamps(path: str, pages: int = 3) -> List[str]:
     """Words like 'Withdrawn' that RBI prints diagonally across a page. Ordinary text extraction scrambles rotated
-    text into stray letters, so read only the slanted pieces. Body sentences are ignored on purpose: a live circular
-    often says 'circular X stands withdrawn' about some other document."""
+    text into stray letters, so read only the slanted glyphs with two independent readers (pdfplumber works from each
+    character's own transform; the pypdf one covers the case where pdfplumber is missing). Either finding the stamp is
+    enough. Body sentences are ignored on purpose: a live circular often says 'circular X stands withdrawn' about
+    some other document."""
     found = set()
-    try:
-        from pypdf import PdfReader
-        for page in PdfReader(path).pages[:pages]:
-            pieces = []
-
-            def visit(text, cm, tm, font_dict, font_size):
-                if text and text.strip():
-                    m = _mul(tm, cm)
-                    if abs(m[1]) > 0.2 or abs(m[2]) > 0.2:
-                        pieces.append(text.strip())
-            page.extract_text(visitor_text=visit)
-            found.update(w.lower() for w in STAMP_RE.findall("".join(pieces)))
-    except Exception as e:  # a stamp check must never stop an analysis
-        log.warning("  [could not check %s for a withdrawn stamp: %s]", path, e)
+    for reader in (_slanted_words_pdfplumber, _slanted_words_pypdf):
+        try:
+            found |= _stamp_words(reader(path, pages))
+        except Exception as e:  # a stamp check must never stop an analysis
+            log.warning("  [%s could not check %s for a withdrawn stamp: %s]", reader.__name__.lstrip("_"), path, e)
     return sorted(found)
 
 
@@ -567,11 +591,57 @@ def fix_changed_limit(ob, text):
     return ob
 
 
+CHUNK_CHARS = 6000   # about 1,500 tokens: well inside a free-tier Groq request, with room for the prompt and reply
+MAX_CHUNKS = 14
+
+
+def chunk_text(text: str, limit: int = CHUNK_CHARS) -> List[str]:
+    """Split a long circular into pieces of at most `limit` characters, breaking between paragraphs (never inside a
+    clause when it can be avoided), so each piece is a request the LLM can actually answer."""
+    chunks, cur = [], ""
+    for para in text.split("\n"):
+        while len(para) > limit:  # one enormous paragraph: cut at the last sentence end before the limit
+            cut = max(para.rfind(". ", 0, limit), para.rfind("; ", 0, limit))
+            cut = cut + 1 if cut > limit // 2 else limit
+            if cur:
+                chunks.append(cur); cur = ""
+            chunks.append(para[:cut]); para = para[cut:].lstrip()
+        if cur and len(cur) + len(para) + 1 > limit:
+            chunks.append(cur); cur = ""
+        cur = f"{cur}\n{para}" if cur else para
+    if cur.strip():
+        chunks.append(cur)
+    return [c for c in chunks if c.strip()]
+
+
+def llm_extract_text(text: str, stats=None):
+    """Whole-circular extraction through the LLM. Long circulars go in pieces; pieces with no obligation wording
+    (titles, annexures, forms) are skipped. Returns None if no piece could be answered, so the fallback runs."""
+    pieces = [c for c in chunk_text(text) if OBLIGATION_HINT.search(c)]
+    total = len(pieces)
+    if len(pieces) > MAX_CHUNKS:
+        log.warning("  [circular is very long: reading the first %d of %d sections]", MAX_CHUNKS, len(pieces))
+        pieces = pieces[:MAX_CHUNKS]
+    raw, answered = [], 0
+    for i, piece in enumerate(pieces, 1):
+        r = llm_json(PROMPT_EXTRACT.format(text=piece, params=known_params()))
+        if r is None:
+            log.warning("  [section %d of %d could not be read by the LLM]", i, len(pieces))
+            continue
+        answered += 1
+        raw += _as_list(r)
+    if len(pieces) > 1:
+        log.info("  [read %d of %d sections]", answered, len(pieces))
+    if stats is not None:  # lets the report and the web page say how much of the circular was really read
+        stats.update(sections=total, sent=len(pieces), answered=answered)
+    return raw if answered else None
+
+
 def extract(state: State) -> State:
     if _blocked(state):
         log.info("[2/5] Skipped: %s", state["context"]["headline"])
         return {"obligations": [], "extractor": "skipped"}
-    text, raw, backend = state["circular_text"], [], "rules"
+    text, raw, backend, coverage = state["circular_text"], [], "rules", {}
     if os.getenv("LORA_ADAPTER"):
         for label, body in split_units(text):
             out = lora_extract(body)
@@ -582,9 +652,9 @@ def extract(state: State) -> State:
         else:
             backend = "lora"
     if backend != "lora":
-        llm = llm_json(PROMPT_EXTRACT.format(text=text, params=known_params()))
+        llm = llm_extract_text(text, coverage)
         if llm is not None:
-            raw, backend = _as_list(llm), "llm"
+            raw, backend = llm, "llm"
     if backend == "rules" or (backend == "llm" and not raw):
         backend, raw = "rules", []
         for clause, body in iter_clauses(text):
@@ -594,7 +664,7 @@ def extract(state: State) -> State:
     if len(obs) < len(raw):
         log.warning("  [dropped %d malformed obligation(s) from %s output]", len(raw) - len(obs), backend)
     log.info("[2/5] Extracted %d measurable obligations (%s)", len(obs), backend)
-    return {"obligations": obs, "extractor": backend}
+    return {"obligations": obs, "extractor": backend, "coverage": coverage if os.getenv("GROQ_API_KEY") else {}}
 
 
 # ====================================================================== Node 3: impact analysis (RAG)
@@ -895,6 +965,7 @@ def build_report(state: State, source: str) -> Dict[str, Any]:
         "circular_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
         "extractor": state.get("extractor", ""),
         "context": state.get("context", {}),
+        "coverage": state.get("coverage", {}),
         "llm_model": active_model(),
         "jira_enabled": jira_ready() and not state.get("dry_run"),
         "counts": {"obligations": len(state.get("obligations", [])), "findings": len(state.get("findings", [])),
