@@ -172,9 +172,10 @@
         (r.skipped_not_applicable ? ` ${r.skipped_not_applicable} pair${r.skipped_not_applicable === 1 ? " was" : "s were"} set aside as not applicable.` : "") })));
     const notes = (cx.warnings || []).slice();
     const cv = r.coverage || {};
+    if (r.unchecked > 0) notes.push(`${r.unchecked} rule and bot pair${r.unchecked === 1 ? " was" : "s were"} not checked because the time limit was reached. Run it again in a minute, or try a shorter circular.`);
     if (cv.sections > 0 && cv.answered === 0) notes.push("The AI reader did not answer (it may be busy or rate limited), so only the basic keyword rules ran. Try again in a minute.");
     else if (cv.sections > cv.answered) notes.push(`Only ${cv.answered} of ${cv.sections} sections of this circular were read` +
-      (cv.sent < cv.sections ? " (it is very long)" : " (the AI service did not answer for the rest)") + ", so rules in the rest were not checked.");
+      (cv.stopped ? " (it was taking too long, so reading stopped early)" : cv.sent < cv.sections ? " (it is very long)" : " (the AI service did not answer for the rest)") + ", so rules in the rest were not checked.");
     if (cx.status && cx.status !== "in_force") notes.unshift(cx.headline);
     if (notes.length) {
       const tone = cx.status === "withdrawn" || cx.status === "expired" ? "stop" : cx.status === "upcoming" ? "soon" : "warn";
@@ -213,11 +214,14 @@
     for (const id of ["empty", "running", "failed", "results"]) $(id).hidden = id !== which;
     if (which !== "results") $("bar").hidden = true;
   }
-  function renderRunning(stage) {
+  function renderRunning(stage, progress) {
     const idx = Math.max(0, STAGES.findIndex(([k]) => k === stage));
     const box = clear($("running"));
+    const sub = (i) => (i === idx && progress && progress.of > 1 && (stage === "extract" || stage === "reason"))
+      ? ` (${stage === "extract" ? "section" : "pair"} ${progress.done} of ${progress.of})` : "";
     box.append(h("h2", { class: "h2", text: "Checking " + (S.input ? S.input.label : "the circular") }),
-      h("ol", null, STAGES.map(([, label], i) => h("li", { class: i < idx ? "done" : i === idx ? "now" : "" }, label))));
+      h("ol", null, STAGES.map(([, label], i) => h("li", { class: i < idx ? "done" : i === idx ? "now" : "" }, label + sub(i)))),
+      h("p", { class: "meta", text: "Long circulars are read in sections and can take a few minutes." }));
   }
   function fail(msg) {
     const box = clear($("failed"));
@@ -237,11 +241,11 @@
       else if (S.input.kind === "sample") res = await api("/api/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sample: S.input.file }) });
       else res = await api("/api/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: S.input.text }) });
       S.job = res.job_id;
-      for (let i = 0; i < 400; i++) {
+      for (let i = 0; i < 800; i++) {
         const j = await api(`/api/jobs/${S.job}`);
         if (j.status === "done") { S.result = j.result; S.tickets = j.tickets || {}; renderResult(); show("results"); if (matchMedia("(max-width: 900px)").matches) $("results").scrollIntoView({ block: "start" }); return; }
         if (j.status === "error") throw new Error(j.error || "The check failed.");
-        renderRunning(j.stage);
+        renderRunning(j.stage, j.progress);
         await new Promise((r) => setTimeout(r, 900));
       }
       throw new Error("The check took too long. Try a shorter circular.");
