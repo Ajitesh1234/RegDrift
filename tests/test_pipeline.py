@@ -538,6 +538,52 @@ class TimeContext(unittest.TestCase):
         self.assertEqual(regdrift.build_report(up, "x")["context"]["status"], "upcoming")
 
 
+class JobDeadline(unittest.TestCase):
+    """One time limit covers the whole check; past it nothing is sent to the LLM and the rest is reported, not guessed."""
+    def setUp(self):
+        self.orig = regdrift.llm_json
+        self.orig_sleep = regdrift._sleep
+        os.environ["GROQ_API_KEY"] = "x"
+        regdrift.start_job_clock(1000)
+
+    def tearDown(self):
+        regdrift.llm_json = self.orig
+        regdrift._sleep = self.orig_sleep
+        os.environ.pop("GROQ_API_KEY", None)
+        regdrift.start_job_clock(1e9)
+
+    def test_retry_gives_up_instead_of_sleeping_past_the_deadline(self):
+        import urllib.error
+        slept = []
+        regdrift._sleep = slept.append
+        def boom():
+            raise urllib.error.HTTPError("u", 429, "slow down", {"Retry-After": "50"}, None)
+        with self.assertRaises(urllib.error.HTTPError):
+            regdrift._retry(boom, deadline=regdrift.time.monotonic() + 5)
+        self.assertEqual(slept, [])
+
+    def test_no_request_is_sent_once_out_of_time(self):
+        regdrift.start_job_clock(-1)
+        self.assertTrue(regdrift.out_of_time())
+        called = []
+        real = regdrift.urllib.request.urlopen
+        regdrift.urllib.request.urlopen = lambda *a, **k: called.append(1)
+        try:
+            self.assertIsNone(regdrift.llm_json("hi"))
+        finally:
+            regdrift.urllib.request.urlopen = real
+        self.assertEqual(called, [])
+
+    def test_unchecked_pairs_are_counted_not_guessed(self):
+        bot = next(b for b in regdrift.load_bots() if b["name"] == "Loan-Disbursal-Bot")
+        ob = {"clause": "Clause 1", "summary": "Loans must be disbursed within 5 days.", "parameter": "unmapped_loan",
+              "operator": "<=", "required_value": 5, "unit": "days"}
+        regdrift.start_job_clock(-1)
+        j = regdrift.judge({"obligation": ob, "bot": bot})
+        self.assertTrue(j.get("unchecked"))
+        self.assertEqual(j["status"], "not_applicable")
+
+
 class StampDetection(unittest.TestCase):
     """The stamp can be rotated by the page transform (cm) or by the text matrix (Tm). Check both, with each reader alone,
     so one library changing how it reports a transform cannot silently stop withdrawn circulars being caught."""
@@ -631,6 +677,31 @@ class LongCircular(unittest.TestCase):
         head = "RBI/2026-27/474 October 7, 2026\n"
         paras = [f"{i}. Regulated entities shall complete item number {i} " + "and keep records of the same " * 12 for i in range(1, n)]
         return head + "\n".join(paras)
+
+    def test_progress_is_reported_and_a_time_budget_stops_reading(self):
+        os.environ["GROQ_API_KEY"] = "x"
+        orig_json = regdrift.llm_json
+        regdrift.llm_json = lambda p: []
+        orig, clock = regdrift.EXTRACT_BUDGET_SECONDS, [0.0]
+        real = regdrift.time.monotonic
+        try:
+            seen = []
+            cov = {}
+            regdrift.llm_extract_text(self.long_text(), cov, lambda i, n: seen.append((i, n)))
+            self.assertEqual(seen[0][0], 1)
+            self.assertEqual([i for i, _ in seen], list(range(1, len(seen) + 1)))
+            self.assertFalse(cov["stopped"])
+            regdrift.EXTRACT_BUDGET_SECONDS = 10
+            regdrift.time.monotonic = lambda: clock.__setitem__(0, clock[0] + 6) or clock[0]  # 6 s passes per look at the clock
+            cov2 = {}
+            regdrift.llm_extract_text(self.long_text(), cov2)
+        finally:
+            regdrift.time.monotonic = real
+            regdrift.EXTRACT_BUDGET_SECONDS = orig
+            regdrift.llm_json = orig_json
+            os.environ.pop("GROQ_API_KEY", None)
+        self.assertTrue(cov2["stopped"])
+        self.assertLess(cov2["sent"], cov2["sections"])
 
     def test_chunks_are_small_whole_and_lose_nothing(self):
         text = self.long_text()
@@ -802,3 +873,4 @@ class SpeculationGuards(unittest.TestCase):
 
     def test_the_reasoning_prompt_forbids_guessing_cited_paragraphs(self):
         self.assertIn("never guess", regdrift.PROMPT_REASON)
+
