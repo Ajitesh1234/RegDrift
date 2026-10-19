@@ -539,27 +539,139 @@ class TimeContext(unittest.TestCase):
 
 
 class StampDetection(unittest.TestCase):
-    def make(self, rotate):
+    """The stamp can be rotated by the page transform (cm) or by the text matrix (Tm). Check both, with each reader alone,
+    so one library changing how it reports a transform cannot silently stop withdrawn circulars being caught."""
+    def make(self, style):
         try:
             from reportlab.pdfgen import canvas
         except ImportError:
             self.skipTest("reportlab not installed")
+        import math
         path = os.path.join(tempfile.mkdtemp(), "c.pdf")
         c = canvas.Canvas(path)
         c.drawString(50, 780, "RBI/2025-26/36 May 8, 2025")
         c.drawString(50, 760, "The earlier circular stands withdrawn.")  # ordinary sentence: must not count
-        c.saveState(); c.translate(250, 400)
-        if rotate:
-            c.rotate(45)
-        c.drawString(0, 0, "Withdrawn"); c.restoreState(); c.save()
+        if style == "tm":
+            t = c.beginText(); k = math.cos(math.radians(45))
+            t.setTextTransform(k, k, -k, k, 250, 400); t.textOut("Withdrawn"); c.drawText(t)
+        else:
+            c.saveState(); c.translate(250, 400)
+            if style == "cm":
+                c.rotate(45)
+            c.drawString(0, 0, "Withdrawn"); c.restoreState()
+        c.save()
         return path
 
-    def test_diagonal_stamp_is_found(self):
-        path = self.make(True)
+    def readers(self):
+        try:
+            import pdfplumber  # noqa: F401
+        except ImportError:
+            self.skipTest("pdfplumber not installed")
+        return (regdrift._slanted_words_pypdf, regdrift._slanted_words_pdfplumber)
+
+    def words(self, reader, path):
+        return "".join(reader(path, 3))
+
+    def test_each_reader_finds_both_kinds_of_rotation(self):
+        for style in ("cm", "tm"):
+            path = self.make(style)
+            for reader in self.readers():
+                self.assertIn("Withdrawn", self.words(reader, path), f"{reader.__name__} / {style}")
+            self.assertEqual(regdrift.pdf_stamps(path), ["withdrawn"], style)
+            self.assertTrue(regdrift.load_text(path).startswith(regdrift.STAMP_MARK))
+
+    def test_stamp_repeated_on_every_page_and_twice_on_one(self):
+        """Real RBI PDFs carry the stamp on every page; the glyphs of repeats run together."""
+        try:
+            from reportlab.pdfgen import canvas
+        except ImportError:
+            self.skipTest("reportlab not installed")
+        self.readers()
+        path = os.path.join(tempfile.mkdtemp(), "multi.pdf")
+        c = canvas.Canvas(path)
+        for page in range(3):
+            c.drawString(50, 780, f"RBI/2025-26/36 page {page}")
+            for y in ((400, 200) if page == 1 else (400,)):
+                c.saveState(); c.translate(250, y); c.rotate(45); c.drawString(0, 0, "Withdrawn"); c.restoreState()
+            c.showPage()
+        c.save()
         self.assertEqual(regdrift.pdf_stamps(path), ["withdrawn"])
         self.assertTrue(regdrift.load_text(path).startswith(regdrift.STAMP_MARK))
 
     def test_flat_text_and_body_sentences_are_not_stamps(self):
-        path = self.make(False)
+        path = self.make("flat")
+        for reader in self.readers():
+            self.assertEqual(self.words(reader, path), "", reader.__name__)
         self.assertEqual(regdrift.pdf_stamps(path), [])
         self.assertFalse(regdrift.load_text(path).startswith(regdrift.STAMP_MARK))
+
+    def test_second_reader_covers_when_the_first_sees_nothing(self):
+        path = self.make("cm")
+        self.readers()
+        orig = regdrift._slanted_words_pypdf
+        regdrift._slanted_words_pypdf = lambda p, n: iter(())
+        try:
+            self.assertEqual(regdrift.pdf_stamps(path), ["withdrawn"])
+        finally:
+            regdrift._slanted_words_pypdf = orig
+
+
+class LongCircular(unittest.TestCase):
+    """A 29-page circular is far too big for one free-tier LLM request; it must be read in sections."""
+    def setUp(self):
+        self.orig = regdrift.llm_json
+        os.environ["GROQ_API_KEY"] = "x"
+        self.prompts = []
+
+    def tearDown(self):
+        regdrift.llm_json = self.orig
+        os.environ.pop("GROQ_API_KEY", None)
+
+    def long_text(self, n=60):
+        head = "RBI/2026-27/474 October 7, 2026\n"
+        paras = [f"{i}. Regulated entities shall complete item number {i} " + "and keep records of the same " * 12 for i in range(1, n)]
+        return head + "\n".join(paras)
+
+    def test_chunks_are_small_whole_and_lose_nothing(self):
+        text = self.long_text()
+        chunks = regdrift.chunk_text(text)
+        self.assertGreater(len(chunks), 3)
+        self.assertTrue(all(len(c) <= regdrift.CHUNK_CHARS for c in chunks))
+        self.assertEqual("\n".join(chunks).split(), text.split())  # same words, same order
+        one = "word. " * 3000  # a single huge paragraph is still cut up
+        self.assertTrue(all(len(c) <= regdrift.CHUNK_CHARS for c in regdrift.chunk_text(one)))
+
+    def test_every_section_is_sent_and_answers_are_merged(self):
+        def stub(prompt):
+            self.prompts.append(prompt)
+            n = len(self.prompts)
+            return [{"clause": f"Clause {n}", "summary": "s", "parameter": f"p{n}", "operator": "<=", "required_value": n, "unit": "days"}]
+        regdrift.llm_json = stub
+        raw = regdrift.llm_extract_text(self.long_text())
+        self.assertGreater(len(self.prompts), 3)
+        self.assertTrue(all(len(p) < regdrift.CHUNK_CHARS + 2500 for p in self.prompts))  # every request stays small
+        self.assertEqual(len(raw), len(self.prompts))
+
+    def test_sections_without_obligation_wording_are_skipped(self):
+        regdrift.llm_json = lambda p: self.prompts.append(p) or []
+        regdrift.llm_extract_text("ANNEXURE\nName of bank\nAddress\nSignature\n" * 50)
+        self.assertEqual(self.prompts, [])
+
+    def test_partial_failure_keeps_what_was_read_and_total_failure_falls_back(self):
+        answers = iter([None, [{"clause": "Clause 1", "summary": "s", "parameter": "p", "operator": "<=", "required_value": 3, "unit": "days"}]])
+        regdrift.llm_json = lambda p: next(answers, None)
+        raw = regdrift.llm_extract_text(self.long_text())
+        self.assertEqual([o["parameter"] for o in raw], ["p"])
+        regdrift.llm_json = lambda p: None
+        self.assertIsNone(regdrift.llm_extract_text(self.long_text()))
+
+    def test_coverage_says_how_much_was_read(self):
+        regdrift.llm_json = lambda p: []
+        cov = {}
+        regdrift.llm_extract_text(self.long_text(n=400), cov)  # far more sections than MAX_CHUNKS
+        self.assertGreater(cov["sections"], regdrift.MAX_CHUNKS)
+        self.assertEqual((cov["sent"], cov["answered"]), (regdrift.MAX_CHUNKS, regdrift.MAX_CHUNKS))
+        st = regdrift.extract({"circular_text": self.long_text(n=400)})
+        self.assertGreater(st["coverage"]["sections"], st["coverage"]["answered"])
+        os.environ.pop("GROQ_API_KEY", None)  # no key = keyword mode: nothing was "missed", so no coverage claim
+        self.assertEqual(regdrift.extract({"circular_text": self.long_text(n=400)})["coverage"], {})
