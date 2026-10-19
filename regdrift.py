@@ -570,6 +570,15 @@ def _num(s):
         return None
 
 
+META_RE = re.compile(r"(?i)\b(short title|commencement|comes? into (?:force|effect)|becomes? effective|"
+                     r"(?:is|are|shall be|stands?) (?:hereby )?(?:repealed|withdrawn|superseded|rescinded)|repealed on|applicability)\b")
+
+
+def is_meta_rule(ob) -> bool:
+    """Notices about the circular itself (when it starts, what it repeals, who it applies to), not duties of a bot."""
+    return bool(META_RE.search(str(ob.get("clause", ""))) or META_RE.search(str(ob.get("summary", ""))))
+
+
 PCT_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(?:%|per\s?cent|percent)", re.I)
 
 
@@ -735,6 +744,10 @@ def extract(state: State) -> State:
             raw += [{**o, "clause": clause, "summary": body} for o in rules_extract_clause(body)]
     obs = [v for o in raw if (v := validate_obligation(o))]
     obs = [fix_percent(fix_changed_limit(o, text)) for o in obs]
+    meta = sum(is_meta_rule(o) for o in obs)
+    if meta:
+        log.info("  [set aside %d commencement/repeal/applicability notice(s): they are about the circular, not a bot]", meta)
+        obs = [o for o in obs if not is_meta_rule(o)]
     if backend == "llm":
         obs = verify_matches(obs)
     if len(obs) < len(raw):
@@ -775,6 +788,24 @@ def retrieve_bow(bots, query, k):
     return scored[:k]
 
 
+REG_COMMON = {"rbi", "reserve", "directions", "direction", "bank", "banks", "paragraph", "para", "shall", "must", "regulated",
+              "entity", "entities", "rule", "rules", "circular", "section", "clause", "table", "template", "with", "that", "this",
+              "from", "have", "been", "will", "such", "than", "other", "each", "under", "which", "where", "when", "their",
+              "they", "more", "less", "also", "only", "into", "over", "required", "requirement", "requirements", "applied"}
+MIN_SHARED_STEMS = 2
+
+
+def _stems(text: str) -> set:
+    words = re.sub(r"[^a-z0-9 ]+", " ", str(text).lower().replace("-", "")).split()
+    return {w[:4] for w in words if len(w) >= 4 and w not in REG_COMMON and not w.isdigit()}
+
+
+def shared_stems(rule: str, bot) -> set:
+    """Meaningful words (by 4-letter stem) a rule has in common with a bot's name, description and tags. A bot is only
+    worth asking about when the rule and the bot talk about at least a couple of the same things."""
+    return _stems(rule) & _stems(bot_doc(bot))
+
+
 SIM_THRESHOLD = {"chroma": float(os.getenv("CHROMA_MIN_SIM", "0.35")), "bow": 0.12}
 
 
@@ -796,7 +827,7 @@ def retrieve(state: State) -> State:
         except Exception:
             found, kind = retrieve_bow(bots, ob["summary"], 3), "bow"
         for bid, score in found:
-            if score >= SIM_THRESHOLD[kind]:
+            if score >= SIM_THRESHOLD[kind] and len(shared_stems(ob["summary"], by_id[bid])) >= MIN_SHARED_STEMS:
                 hits.setdefault(bid, score)
         for bid, score in hits.items():
             impacts.append({"obligation": ob, "bot": by_id[bid], "score": round(score, 2)})
@@ -809,7 +840,11 @@ PROMPT_REASON = """Rule: {rule}
 Bot: {bot} ({platform}) - {desc}
 Bot parameters: {params}
 First decide if this rule concerns what the bot actually does. If the bot's job is unrelated to the
-rule, answer not_applicable. Otherwise judge compliance. Return ONLY JSON:
+rule, answer not_applicable. Judge ONLY from the rule text and bot description above. If the rule merely cites a
+paragraph, section or table whose content is not stated (for example "paragraph 85(3) shall be repealed"), you cannot
+know what it requires: answer not_applicable, and never guess what a cited provision says. Use at_risk only when the
+description shows the bot performs the very activity the rule regulates and the rule states a concrete requirement.
+Return ONLY JSON:
 {{"status": "not_applicable"|"compliant"|"at_risk"|"violating"|"optional_gap", "confidence": 0-1, "reason": str}}
 (optional_gap = the rule only permits something and the bot does not use it yet; it is not a breach)"""
 STATUSES = ("not_applicable", "compliant", "at_risk", "violating", "optional_gap")
@@ -885,6 +920,11 @@ def judge(imp):
         except (TypeError, ValueError):
             conf = 0.5
         status, why = r["status"], str(r.get("reason", ""))[:500]
+        if status == "compliant":
+            # Nothing structured was checked, so "compliant" would be an unsupported claim: set it aside rather than
+            # show a green tick the evidence cannot back.
+            return {"status": "not_applicable", "confidence": 0.5,
+                    "reason": "No matching bot setting, so compliance cannot be confirmed from the description alone. " + why[:300]}
         if status == "violating":
             # A High needs evidence from a structured bot setting. An LLM reading only a description
             # is a guess, so it is capped at Medium for a human to confirm.
