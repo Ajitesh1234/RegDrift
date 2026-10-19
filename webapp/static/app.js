@@ -171,6 +171,10 @@
       h("p", { class: "meta", text: cx.status === "withdrawn" ? (r.circular_ref || r.source) : `Checked ${r.findings.length} rule and bot pairs from ${r.obligations.length} rule${r.obligations.length === 1 ? "" : "s"} in ${r.circular_ref || r.source}.` +
         (r.skipped_not_applicable ? ` ${r.skipped_not_applicable} pair${r.skipped_not_applicable === 1 ? " was" : "s were"} set aside as not applicable.` : "") })));
     const notes = (cx.warnings || []).slice();
+    const cv = r.coverage || {};
+    if (cv.sections > 0 && cv.answered === 0) notes.push("The AI reader did not answer (it may be busy or rate limited), so only the basic keyword rules ran. Try again in a minute.");
+    else if (cv.sections > cv.answered) notes.push(`Only ${cv.answered} of ${cv.sections} sections of this circular were read` +
+      (cv.sent < cv.sections ? " (it is very long)" : " (the AI service did not answer for the rest)") + ", so rules in the rest were not checked.");
     if (cx.status && cx.status !== "in_force") notes.unshift(cx.headline);
     if (notes.length) {
       const tone = cx.status === "withdrawn" || cx.status === "expired" ? "stop" : cx.status === "upcoming" ? "soon" : "warn";
