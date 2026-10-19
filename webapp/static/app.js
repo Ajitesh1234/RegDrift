@@ -133,6 +133,7 @@
     if (!open.length && S.filter === "all" && ctxStatus !== "withdrawn") box.append(h("p", { class: "empty-note", text: S.result.obligations.length === 0
       ? (S.status && S.status.llm ? "This text has no limits, deadlines or yes/no requirements to check. Titles, commencement and sign-off clauses are skipped on purpose."
          : "Nothing could be read from this circular with keyword rules alone. This server has no LLM key, so only a few built-in rule types are recognised. Try the samples, or run it with a GROQ_API_KEY.")
+      : S.result.findings.length === 0 ? "None of your bots handle these rules, so there was nothing to compare. Add or import the bot that does this work to have it checked."
       : "No drift found. Every bot that handles these rules is within them." }));
     shown.forEach((f) => box.append(findingEl(f)));
     if (S.filter === "all" && ok.length) {
@@ -167,7 +168,7 @@
       : cx.status === "expired" ? "Temporary measure has ended"
       : r.obligations.length === 0 ? "No checkable rules found" : null;
     box.append(h("div", { class: "sum" },
-      h("h1", { class: "h1 small", text: heading || (r.obligations.length === 0 ? "No checkable rules found" : bots === 0 ? "No bots out of line" : `${bots} bot${bots === 1 ? "" : "s"} out of line`) }),
+      h("h1", { class: "h1 small", text: heading || (r.obligations.length === 0 ? "No checkable rules found" : bots === 0 ? (r.findings.length === 0 ? "No matching bots" : "No bots out of line") : `${bots} bot${bots === 1 ? "" : "s"} out of line`) }),
       h("p", { class: "meta", text: cx.status === "withdrawn" ? (r.circular_ref || r.source) : `Checked ${r.findings.length} rule and bot pairs from ${r.obligations.length} rule${r.obligations.length === 1 ? "" : "s"} in ${r.circular_ref || r.source}.` +
         (r.skipped_not_applicable ? ` ${r.skipped_not_applicable} pair${r.skipped_not_applicable === 1 ? " was" : "s were"} set aside as not applicable.` : "") })));
     const notes = (cx.warnings || []).slice();
