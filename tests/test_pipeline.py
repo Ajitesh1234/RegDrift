@@ -732,3 +732,73 @@ class PercentAndMatchChecks(unittest.TestCase):
         o = self.ob(parameter="capture_hedge_undertaking", summary="Banks must not recognize CVA hedges.")
         regdrift.verify_matches([o, dict(o), dict(o)])
         self.assertEqual(len(calls), 1)
+
+
+class SpeculationGuards(unittest.TestCase):
+    """The first real long circular (CVA capital rules, no matching bots) produced invented findings."""
+    def setUp(self):
+        self.orig = regdrift.llm_json
+
+    def tearDown(self):
+        regdrift.llm_json = self.orig
+
+    def ob(self, summary, clause="Clause 29", **kw):
+        return {"clause": clause, "summary": summary, "parameter": "p", "operator": "==", "required_value": True,
+                "unit": "", "modality": "mandatory", **kw}
+
+    def test_notices_about_the_circular_itself_are_not_bot_rules(self):
+        meta = [self.ob("Paragraph 85(3) of the RBI Directions shall be repealed on 1 April 2027."),
+                self.ob("The Directions shall become effective on or after 1 April 2027.", "Clause A. Short Title and Commencement (2)"),
+                self.ob("The Directions shall apply to commercial banks.", "Clause B. Applicability (3)"),
+                self.ob("These Directions shall come into force with immediate effect.")]
+        real = [self.ob("Authorised Dealers must not permit users to rebook any cancelled contract.", "Clause (a)"),
+                self.ob("Suspicious transaction reports shall be filed within 7 days.", "Clause 2"),
+                self.ob("Authorised Dealers must obtain and retain an undertaking from the user.", "Clause (d)")]
+        self.assertTrue(all(regdrift.is_meta_rule(o) for o in meta))
+        self.assertFalse(any(regdrift.is_meta_rule(o) for o in real))
+
+    def test_extract_drops_them(self):
+        os.environ["GROQ_API_KEY"] = "x"
+        try:
+            raw = [{"clause": "Clause 29", "summary": "Paragraph 85(3) shall be repealed on 1 April 2027.", "parameter": "x",
+                    "operator": "==", "required_value": "2027-04-01", "unit": "date"},
+                   {"clause": "Clause 2", "summary": "STRs shall be filed within 3 days.", "parameter": "str_filing_days",
+                    "operator": "<=", "required_value": 3, "unit": "days"}]
+            regdrift.llm_json = lambda p: raw if "Extract machine-checkable" in p else {"concerns_setting": True}
+            st = regdrift.extract({"circular_text": "9. Banks shall file STRs within 3 days. It shall be repealed.\n" * 3})
+            self.assertEqual([o["parameter"] for o in st["obligations"]], ["str_filing_days"])
+        finally:
+            os.environ.pop("GROQ_API_KEY", None)
+
+    def test_a_bot_must_share_real_words_with_the_rule(self):
+        bots = {b["name"]: b for b in regdrift.load_bots()}
+        repeal = "Paragraph 85(3) of the RBI Directions shall be repealed on 1 April 2027."
+        for b in bots.values():
+            self.assertLess(len(regdrift.shared_stems(repeal, b)), regdrift.MIN_SHARED_STEMS, b["name"])
+        fx = "For collateralised OTC derivative transactions the effective maturity floor is at least one day."
+        self.assertGreaterEqual(len(regdrift.shared_stems(fx, bots["FX-Derivative-Booking-Bot"])), regdrift.MIN_SHARED_STEMS)
+        self.assertLess(len(regdrift.shared_stems(fx, bots["KYC-Refresh-Bot"])), regdrift.MIN_SHARED_STEMS)
+
+    def test_retrieval_skips_bots_that_only_look_similar(self):
+        os.environ["REGDRIFT_RETRIEVER"] = "bow"
+        try:
+            ob = self.ob("Reserve Bank directions on customer reporting shall be reviewed by regulated banks.", parameter="unmapped_x")
+            got = regdrift.retrieve({"obligations": [ob]})["impacts"]
+            for i in got:
+                self.assertGreaterEqual(len(regdrift.shared_stems(ob["summary"], i["bot"])), regdrift.MIN_SHARED_STEMS)
+        finally:
+            os.environ.pop("REGDRIFT_RETRIEVER", None)
+
+    def test_description_only_compliant_is_not_shown_as_compliant(self):
+        os.environ["GROQ_API_KEY"] = "x"
+        try:
+            regdrift.llm_json = lambda p: {"status": "compliant", "confidence": 0.9, "reason": "Looks fine."}
+            bot = next(b for b in regdrift.load_bots() if b["name"] == "Loan-Disbursal-Bot")
+            j = regdrift.judge({"obligation": self.ob("Loans must be disbursed within 5 days.", parameter="unmapped_loan"), "bot": bot})
+            self.assertEqual(j["status"], "not_applicable")
+            self.assertIn("cannot be confirmed", j["reason"])
+        finally:
+            os.environ.pop("GROQ_API_KEY", None)
+
+    def test_the_reasoning_prompt_forbids_guessing_cited_paragraphs(self):
+        self.assertIn("never guess", regdrift.PROMPT_REASON)
