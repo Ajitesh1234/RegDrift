@@ -105,7 +105,7 @@ def _run_job(job, text, name):
             "sha256": report["circular_sha256"], "extractor": state.get("extractor", ""),
             "model": report["llm_model"], "run_at": report["run_at_utc"],
             "obligations": state.get("obligations", []),
-            "context": state.get("context") or {},
+            "context": state.get("context") or {}, "coverage": state.get("coverage") or {},
             "skipped_not_applicable": len(state.get("skipped", [])),
             "findings": [_public_finding(i, r) for i, r in enumerate(rows)],
         }
@@ -259,11 +259,21 @@ async def create_tickets(request):
 
 
 # ---------------------------------------------------------------- read-only info
+def _reader_versions():
+    out = {}
+    for mod in ("pypdf", "pdfplumber"):
+        try:
+            out[mod] = __import__(mod).__version__
+        except Exception:
+            out[mod] = None
+    return out
+
+
 async def status(request):
     return JSONResponse({"version": regdrift.__version__, "model": regdrift.active_model(),
                          "llm": bool(os.getenv("GROQ_API_KEY")), "ticketing": ticketing_enabled(),
                          "jira_base": (os.getenv("JIRA_URL") or "").rstrip("/") if ticketing_enabled() else "",
-                         "rate_per_hour": RATE_PER_HOUR})
+                         "rate_per_hour": RATE_PER_HOUR, "pdf_readers": _reader_versions()})
 
 
 async def list_samples(request):
