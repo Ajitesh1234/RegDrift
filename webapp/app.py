@@ -88,9 +88,10 @@ def _public_finding(i, f):
 
 def _run_job(job, text, name):
     try:
-        state = {"circular_text": text, "source": name, "dry_run": True}
+        state = {"circular_text": text, "source": name, "dry_run": True,
+                 "on_progress": lambda done, of: job.update(progress={"done": done, "of": of})}
         for stage, fn in STAGES:
-            job["stage"] = stage
+            job["stage"], job["progress"] = stage, None
             state = {**state, **fn(state)}
         bots = {b["id"]: b for b in regdrift.load_bots()}
         rows = []
@@ -105,7 +106,7 @@ def _run_job(job, text, name):
             "sha256": report["circular_sha256"], "extractor": state.get("extractor", ""),
             "model": report["llm_model"], "run_at": report["run_at_utc"],
             "obligations": state.get("obligations", []),
-            "context": state.get("context") or {}, "coverage": state.get("coverage") or {},
+            "context": state.get("context") or {}, "coverage": state.get("coverage") or {}, "unchecked": state.get("unchecked", 0),
             "skipped_not_applicable": len(state.get("skipped", [])),
             "findings": [_public_finding(i, r) for i, r in enumerate(rows)],
         }
@@ -199,7 +200,7 @@ async def job_status(request):
     job = JOBS.get(request.path_params["jid"])
     if not job:
         return err("That check has expired. Run it again.", 404)
-    out = {"status": job["status"], "stage": job["stage"], "tickets": job["tickets"]}
+    out = {"status": job["status"], "stage": job["stage"], "tickets": job["tickets"], "progress": job.get("progress")}
     if job["status"] == "done":
         out["result"] = job["result"]
     if job["status"] == "error":
