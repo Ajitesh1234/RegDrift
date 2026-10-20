@@ -1,0 +1,24 @@
+name: Repo pulse
+on:
+  schedule:
+    - cron: "0 3 * * 1"        # every Monday, 08:30 India time
+  workflow_dispatch:           # or click "Run workflow" to refresh the chart now
+
+permissions:
+  contents: write              # only to commit docs/activity.svg
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }          # the chart needs the whole history
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: python tools/make_metrics.py
+      - name: Commit the chart if it changed
+        run: |
+          git config user.name "Ajitesh1234"
+          git config user.email "38150999+Ajitesh1234@users.noreply.github.com"
+          git add docs/activity.svg
+          git diff --cached --quiet || { git commit -m "Refresh repo pulse [skip render]" && git push; }
