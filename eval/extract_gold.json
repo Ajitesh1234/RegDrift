@@ -1,0 +1,99 @@
+{
+  "about": "Hand-labelled expectations for the rule-extraction step. Written by reading each circular, before looking at what the extractor returned. 'required' rules must be found; 'optional' rules are acceptable but not counted; 'must_not' lists things that must never be reported as a rule. A rule matches an extracted obligation when every keyword group has at least one of its words in the obligation text (summary, clause, parameter name) and, if 'value' is given, the required value equals one of the listed numbers.",
+  "circulars": [
+    {
+      "id": "RBI/2026-27/282",
+      "text": "extract_texts/rbi_2026-27_282_laf_rates.txt",
+      "title": "LAF rate change (October 2026)",
+      "rules": [
+        {"id": "repo_rate", "required": true, "all": [["repo"]], "value": [5.5],
+         "note": "Policy repo rate becomes 5.50 per cent."},
+        {"id": "sdf_rate", "required": true, "all": [["sdf", "standing deposit"]], "value": [5.25],
+         "note": "SDF rate 5.25 per cent."},
+        {"id": "msf_rate", "required": true, "all": [["msf", "marginal standing"]], "value": [5.75],
+         "note": "MSF rate 5.75 per cent."}
+      ],
+      "must_not": [
+        {"id": "old_repo_rate", "all": [["repo"]], "value": [5.25],
+         "note": "5.25 is the OLD repo rate in 'from 5.25 to 5.50'; reporting it as the rule is wrong."},
+        {"id": "immediate_effect", "all": [["immediate effect", "with immediate", "come into force"]],
+         "note": "Commencement wording is not a rule a bot can break."}
+      ]
+    },
+    {
+      "id": "RBI/2026-27/138",
+      "text": "extract_texts/rbi_2026-27_138_deposit_rates.txt",
+      "title": "Interest rate on deposits, temporary withdrawal (June 2026)",
+      "rules": [
+        {"id": "nre_nro_cap", "required": true, "all": [["nre", "nro"], ["domestic", "comparable"]],
+         "note": "NRE/NRO rates must not be higher than comparable domestic rupee term deposits."},
+        {"id": "fcnr_1_to_3_cap", "required": true, "all": [["fcnr", "foreign currency", "alternative reference", "swap"]],
+         "value": [250], "note": "Ceiling OIS/ARR plus 250 basis points for 1 to under 3 years."},
+        {"id": "fcnr_3_to_5_cap", "required": false, "all": [["fcnr", "foreign currency", "alternative reference", "swap"]],
+         "value": [350], "note": "350 bps ceiling is temporarily withdrawn until 30 Sep 2026; reporting it is acceptable."},
+        {"id": "temporary_withdrawal", "required": false, "all": [["withdraw"], ["2026-09-30", "september 30", "30 september"]],
+         "note": "Temporary withdrawal until 30 Sep 2026."}
+      ],
+      "must_not": [
+        {"id": "commencement", "all": [["come into effect", "come into force", "effective"], ["date of issue", "immediate"]],
+         "note": "Commencement clause."},
+        {"id": "short_title", "all": [["called", "short title"]], "note": "Title clause."}
+      ]
+    },
+    {
+      "id": "RBI/2026-27/217",
+      "text": "extract_texts/rbi_2026-27_217_payments_banks.txt",
+      "title": "Payments banks, disclosure of deposit interest rates (July 2026)",
+      "rules": [
+        {"id": "pay_as_disclosed", "required": true, "all": [["schedule", "disclosed", "disclose"], ["website"]],
+         "note": "Interest payable strictly as per the schedule disclosed in advance on the bank's website."}
+      ],
+      "must_not": [
+        {"id": "commencement", "all": [["come into effect", "come into force", "effective from"]],
+         "note": "Commencement 1 October 2026."},
+        {"id": "short_title", "all": [["called", "short title"]], "note": "Title clause."}
+      ]
+    },
+    {
+      "id": "RBI/2026-27/291",
+      "text": "extract_texts/rbi_2026-27_291_fx_derivatives.txt",
+      "title": "FX derivatives: rebooking, threshold, undertaking (October 2026)",
+      "rules": [
+        {"id": "no_rebook", "required": true, "all": [["rebook"], ["cancel"]],
+         "note": "Must not permit rebooking of a cancelled INR derivative."},
+        {"id": "threshold_5m", "required": true, "all": [["underlying", "position", "threshold", "limit"]],
+         "value": [5, 5000000], "note": "Threshold without underlying exposure is now USD 5 million."},
+        {"id": "undertaking", "required": true, "all": [["undertaking"]],
+         "note": "Obtain and retain an undertaking that the exposure is not hedged with another AD."},
+        {"id": "retain_two_years", "required": true, "all": [["retain", "retention", "retained"], ["document"]],
+         "value": [2, 24], "note": "Documents retained for not less than two years."},
+        {"id": "rollover", "required": false, "all": [["rollover", "roll over"]],
+         "note": "Rollover on maturity may continue; a permission, acceptable to report."}
+      ],
+      "must_not": [
+        {"id": "old_threshold_100m", "all": [["million"]], "value": [100, 100000000],
+         "note": "USD 100 million is the OLD limit that the circular replaces."},
+        {"id": "commencement", "all": [["immediate effect", "come into force"]],
+         "note": "Commencement clause."},
+        {"id": "legal_powers", "all": [["fema", "exercise of the powers", "section 10", "section 45w"]],
+         "note": "Statement of legal powers."}
+      ]
+    },
+    {
+      "id": "RBI/2026-27/257",
+      "text": "extract_texts/rbi_2026-27_257_kyc_fpi.txt",
+      "title": "KYC certified copy extended to FPIs (September 2026)",
+      "rules": [
+        {"id": "fpi_extension", "required": true, "all": [["fpi", "foreign portfolio"]],
+         "note": "The certified-copy facility is extended to Foreign Portfolio Investors."},
+        {"id": "certifying_authorities", "required": false,
+         "all": [["overseas branch", "overseas bank", "notary", "magistrate", "judge", "embassy", "consulate"]],
+         "note": "The six certifying authorities; acceptable to report as list rules."}
+      ],
+      "must_not": [
+        {"id": "commencement", "all": [["immediate effect", "come into force"]], "note": "Commencement clause."},
+        {"id": "short_title", "all": [["called", "short title"]], "note": "Title clause."}
+      ]
+    }
+  ]
+}
