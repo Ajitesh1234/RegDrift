@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="340" viewBox="0 0 1280 340" role="img" aria-labelledby="t d">
+  <title id="t">RegDrift</title>
+  <desc id="d">A rule limit of 5 and a bot setting of 100 drifting apart, and the ticket RegDrift files for it.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0f1e"/><stop offset="1" stop-color="#15234a"/>
+    </linearGradient>
+    <linearGradient id="ac" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2dd4bf"/><stop offset="1" stop-color="#60a5fa"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2dd4bf" stop-opacity=".0"/><stop offset=".15" stop-color="#2dd4bf"/><stop offset="1" stop-color="#f87171"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity=".045"/>
+    </pattern>
+    <radialGradient id="glow" cx=".85" cy=".5" r=".6">
+      <stop offset="0" stop-color="#f87171" stop-opacity=".16"/><stop offset="1" stop-color="#f87171" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="r"><rect width="1280" height="340" rx="22"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#r)">
+    <rect width="1280" height="340" fill="url(#bg)"/>
+    <rect width="1280" height="340" fill="url(#grid)"/>
+    <rect width="1280" height="340" fill="url(#glow)"/>
+
+    <!-- left: name and promise -->
+    <g font-family="ui-sans-serif,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">
+      <text x="70" y="92" fill="#2dd4bf" font-size="14" font-weight="700" letter-spacing="3.2">REGULATORY CHANGE MONITOR FOR RPA BOTS</text>
+      <text x="66" y="182" font-size="96" font-weight="800" letter-spacing="-2" fill="#f8fafc">Reg<tspan fill="url(#ac)">Drift</tspan></text>
+      <text x="70" y="228" fill="#cbd5e1" font-size="23">A new RBI circular lands.</text>
+      <text x="70" y="262" fill="#94a3b8" font-size="23">Which of your bots just fell out of compliance?</text>
+    </g>
+
+    <!-- right: the drift gauge -->
+    <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" transform="translate(-52 0)">
+      <text x="760" y="104" fill="#64748b" font-size="13" letter-spacing="1.6">hedge_threshold_usd_million</text>
+      <line x1="770" y1="190" x2="1210" y2="190" stroke="#334155" stroke-width="2"/>
+      <g stroke="#334155" stroke-width="2">
+        <line x1="770" y1="184" x2="770" y2="196"/><line x1="880" y1="184" x2="880" y2="196"/>
+        <line x1="990" y1="184" x2="990" y2="196"/><line x1="1100" y1="184" x2="1100" y2="196"/>
+        <line x1="1210" y1="184" x2="1210" y2="196"/>
+      </g>
+
+      <!-- drift bar grows from the limit to the bot's setting, then the cycle repeats -->
+      <rect x="791" y="187" height="6" rx="3" fill="url(#bar)">
+        <animate attributeName="width" values="0;0;419;419;419" keyTimes="0;.08;.5;.9;1" dur="7s" repeatCount="indefinite"/>
+      </rect>
+
+      <!-- RBI limit marker -->
+      <line x1="791" y1="150" x2="791" y2="190" stroke="#2dd4bf" stroke-width="2.5"/>
+      <circle cx="791" cy="190" r="7" fill="#0a0f1e" stroke="#2dd4bf" stroke-width="3"/>
+      <text x="791" y="136" fill="#2dd4bf" font-size="15" font-weight="700" text-anchor="middle">RBI limit: 5</text>
+
+      <!-- the bot's current setting -->
+      <circle cx="1210" cy="190" r="9" fill="#f87171">
+        <animate attributeName="r" values="9;14;9" dur="2.2s" repeatCount="indefinite"/>
+        <animate attributeName="fill-opacity" values="1;.55;1" dur="2.2s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="1210" cy="190" r="6" fill="#fecaca"/>
+      <text x="1210" y="232" fill="#fca5a5" font-size="15" font-weight="700" text-anchor="middle">bot setting: 100</text>
+
+      <!-- ticket chip -->
+      <g>
+        <animate attributeName="opacity" values="0;0;0;1;1;1;0" keyTimes="0;.3;.5;.58;.88;.96;1" dur="7s" repeatCount="indefinite"/>
+        <rect x="880" y="258" width="318" height="42" rx="10" fill="#0f172a" stroke="#f87171" stroke-opacity=".6"/>
+        <circle cx="901" cy="279" r="5" fill="#f87171"/>
+        <text x="916" y="284" fill="#e2e8f0" font-size="14" font-weight="700">HIGH</text>
+        <text x="966" y="284" fill="#94a3b8" font-size="14">ticket filed · clause (c)</text>
+      </g>
+    </g>
+  </g>
+</svg>
