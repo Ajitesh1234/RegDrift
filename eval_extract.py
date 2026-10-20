@@ -13,7 +13,7 @@ Reported per run: required-rule recall, must-not violations, and extra rules nob
 Exit status is 1 if any run has a must-not violation, so it can gate a change; recall is printed, not gated, because
 the AI's answers vary.
 """
-import argparse, json, os, re, sys
+import argparse, json, os, re, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GOLD = os.path.join(HERE, "eval", "extract_gold.json")
@@ -105,6 +105,7 @@ def main(argv=None) -> int:
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--predictions", help="score saved extractor output instead of running it")
     ap.add_argument("--save", help="write the extractor output to this file")
+    ap.add_argument("--pause", type=float, default=3.0, help="seconds between circulars, to stay under free-tier rate limits")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     gold = load_gold(args.gold)
@@ -119,7 +120,11 @@ def main(argv=None) -> int:
             runs.append({c["id"]: score_circular(c, p.get(c["id"], [])) for c in cases})
     else:
         for _ in range(max(1, args.repeat)):
-            out = {c["id"]: run_extractor(c, base) for c in cases}
+            out = {}
+            for c in cases:
+                out[c["id"]] = run_extractor(c, base)
+                if os.getenv("GROQ_API_KEY") and args.pause > 0:
+                    time.sleep(args.pause)
             saved.append(out)
             runs.append({c["id"]: score_circular(c, out[c["id"]]) for c in cases})
         if args.save:
