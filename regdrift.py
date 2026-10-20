@@ -264,6 +264,12 @@ OBLIGATION_HINT = re.compile(
     r"at least|not less than|not more than|up\s?to)\b", re.I)
 
 
+# Which sections of a long circular are worth sending to the LLM. Wider than OBLIGATION_HINT on purpose: a rate-change
+# circular ("increase the repo rate from 5.25 to 5.50 per cent") has no "shall" or "must" but is entirely rules.
+CHUNK_HINT = re.compile(OBLIGATION_HINT.pattern[:-3] + r"|per\s?cent|percent|%|basis points?|bps|rates?|ceiling|"
+                        r"floor|limit|threshold|decided|extend(?:ed|s)?|withdrawn)\b", re.I)
+
+
 def iter_clauses(text):
     for m in CLAUSE_RE.finditer(text):
         yield f"Clause {m.group(1) or m.group(2)}", m.group(3)
@@ -331,6 +337,12 @@ and "==" only for exact values or yes/no rules.
 For a deadline or calendar date, give required_value as an ISO string "YYYY-MM-DD" with unit "date":
 "<=" for "by / on or before", ">=" for "on or after / not earlier than". Durations ("within 30 days") stay numbers.
 If the circular changes an old limit to a new one, use the NEW value. Skip clauses with no checkable rule.
+A rate, ceiling or limit that the circular sets or changes is a rule: use "==" (or "<=" for a ceiling) with the NEW number,
+for example a policy rate raised from 5.25 to 5.50 per cent gives 5.5 with unit "percent". Never report the old number.
+When the circular extends an existing facility to one more class of persons or entities (for example "and Foreign
+Portfolio Investors"), report one "contains" rule naming that class, besides rules for the details of the facility.
+A rule that compares with another rate ("not higher than the rate on comparable domestic deposits") is a yes/no rule:
+use "==" with true.
 <circular>
 {text}
 </circular>"""
@@ -725,7 +737,7 @@ def chunk_text(text: str, limit: int = CHUNK_CHARS) -> List[str]:
 def llm_extract_text(text: str, stats=None, on_progress=None):
     """Whole-circular extraction through the LLM. Long circulars go in pieces; pieces with no obligation wording
     (titles, annexures, forms) are skipped. Returns None if no piece could be answered, so the fallback runs."""
-    pieces = [c for c in chunk_text(text) if OBLIGATION_HINT.search(c)]
+    pieces = [c for c in chunk_text(text) if CHUNK_HINT.search(c)]
     total = len(pieces)
     if len(pieces) > MAX_CHUNKS:
         log.warning("  [circular is very long: reading the first %d of %d sections]", MAX_CHUNKS, len(pieces))
