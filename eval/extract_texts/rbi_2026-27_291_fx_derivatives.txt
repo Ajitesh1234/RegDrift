@@ -1,0 +1,61 @@
+RESERVE BANK OF INDIA
+www.rbi.org.in
+�वत्तीय बाज़ार �व�नयमन �वभाग,क ें द्र�य कायार्लय भवन, नौवीं मंिजल, शह�द भगत �संह मागर्, फोटर्, मुंबई–400001.भारत
+फोन: (91-22) 2260 1000, ई-मेल: cgmfmrd@rbi.org.in
+Financial Markets Regulation Department, Central Office Building, 9 th Floor, Shahid Bhagat Singh Marg, Fort, Mumbai – 400001. India
+Tel: (91-22) 2260 1000, e-mail- cgmfmrd@rbi.org.in
+�हन्द� आसान है, इसका प्रयोग बढ़ाइए
+  भारतीय �रज़वर् बैंक
+RBI/2026-27/291
+A.P. (DIR Series) Circular No. 25                                                        October 10, 2026
+To,
+All Authorised Dealers
+Madam/Sir,
+Risk Management and Inter-Bank Dealings
+Attention of Authorised Dealers is invited to the Master Direction -  Risk Management
+and Inter-Bank Dealings dated July 05, 2016, as amended from time to time.
+2. In view of evolving market conditions, it has been decided as under:
+Cancellation and rebooking / rollovers of foreign exchange derivative contracts
+(a) An Authorised Dealer shall not permit users to rebook any foreign exchange
+derivative contract involving the INR, whether deliverable or non- deliverable, which
+has been cancelled with any of the Authorised Dealers , after the issuance of these
+Directions.
+(b) An Authorised Dealer may, however, continue to permit users  to rollover foreign
+exchange derivative contracts on maturity, subject to compliance with the provisions
+of the Master Direction ibid.
+Threshold limit for taking positions without requirement to establish the
+existence of underlying
+(c) In terms of the proviso to paragraph 2.4 (i) of Section I of Part A of the Master
+Direction ibid, Authorised Dealers are permitted to allow users to take positions upto
+USD 100 million equivalent of notional value (outstanding at any point of time), across
+all Authorised Dealers, for hedging contracted exposure without the requirement to
+establish the existence of underlying exposure. Further, in terms of paragraph 3.4 (i)
+2
+of Section I of Part A of the Master Direction ibid, a user is allowed to take positions
+(long or short), without having to establish existence of underlying exposure, upto a
+single limit of USD 100 million equivalent across all currency pairs involving INR, put
+together, and combined across all Recognized Stock Exchanges. The threshold for
+each of the above facilities shall, henceforth, be USD 5 million equivalent of notional
+value (outstanding at any point of time).
+Requirement for Additional Documentation
+(d) An Authorised Dealer shall, at the time of offering a foreign exchange derivative
+contract involving INR to a user to hedge a contracted exposure, obtain and retain an
+undertaking from the user that the same underlying exposure has not been hedged
+with any other Authorised Dealer. Where the same exposure is being hedged in parts
+with more than one Authorised Dealer, the details of amounts already booked with
+other Aut horised Dealer/s should be clearly indicated in the undertaking. This
+undertaking can also be obtained as a part of the deal confirmation. This shall be in
+addition to any other document(s) which the Authorised Dealers may call for from
+users in terms of paragraph 2.4 (iv) of Section I of Part A of the Master Direction ibid
+and for complying with the requirements of these Directions.
+3. It shall be the responsibility of an Authorised Dealer to ensure compliance of these
+directions including the existence of underlying exposure, for which it will take
+necessary documents and retain them for a period not less than two years.
+4. These Directions shall come into force with immediate effect.
+5. These directions are issued in exercise of the powers conferred by Sections 10(4)
+and 11(1) of the FEMA, 1999 , and Section 45W of the Reserve Bank of India Act,
+1934, and are without prejudice to permissions / approvals, if any, required under any
+other law.
+Yours faithfully,
+(Dimple Bhandia)
+Chief General Manager
