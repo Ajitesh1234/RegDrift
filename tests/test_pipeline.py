@@ -805,6 +805,37 @@ class PercentAndMatchChecks(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
 
+class RateChangeCirculars(unittest.TestCase):
+    """A circular that only moves rates has no 'shall' or 'must', but every sentence is a rule."""
+    TEXT = ("RBI/2026-27/282\nOctober 07, 2026\nLiquidity Adjustment Facility - Change in rates\n"
+            "The MPC has decided to increase the policy repo rate under the LAF by 25 basis points from 5.25 per cent "
+            "to 5.50 per cent with immediate effect.\n2. Consequently, the SDF rate and MSF rate stand adjusted to "
+            "5.25 per cent and 5.75 per cent respectively.\n")
+
+    def setUp(self):
+        self.orig = regdrift.llm_json
+        os.environ["GROQ_API_KEY"] = "x"
+
+    def tearDown(self):
+        regdrift.llm_json = self.orig
+        os.environ.pop("GROQ_API_KEY", None)
+
+    def test_the_section_is_sent_to_the_llm(self):
+        self.assertFalse(regdrift.OBLIGATION_HINT.search(self.TEXT))   # why it used to be skipped
+        sent = []
+        regdrift.llm_json = lambda p: sent.append(p) or [{"clause": "Clause 1", "summary": "Policy repo rate is 5.50 per cent.",
+            "parameter": "policy_repo_rate", "operator": "==", "required_value": 5.5, "unit": "percent"}]
+        st = regdrift.extract({"circular_text": self.TEXT})
+        self.assertEqual(len(sent), 1)
+        self.assertEqual([o["required_value"] for o in st["obligations"]], [5.5])
+
+    def test_prompt_tells_the_model_to_use_the_new_rate_and_to_report_extensions(self):
+        p = regdrift.PROMPT_EXTRACT
+        self.assertIn("NEW number", p)
+        self.assertIn("Never report the old number", p)
+        self.assertIn("Foreign", p)
+
+
 class SpeculationGuards(unittest.TestCase):
     """The first real long circular (CVA capital rules, no matching bots) produced invented findings."""
     def setUp(self):
