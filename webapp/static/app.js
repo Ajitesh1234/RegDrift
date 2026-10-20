@@ -169,7 +169,7 @@
       : cx.status === "expired" ? "Temporary measure has ended"
       : r.obligations.length === 0 ? "No checkable rules found" : null;
     box.append(h("div", { class: "sum" },
-      h("h1", { class: "h1 small", text: heading || (r.obligations.length === 0 ? "No checkable rules found" : bots === 0 ? (r.findings.length + (r.skipped_not_applicable || 0) === 0 ? "No matching bots" : "No bots out of line") : `${bots} bot${bots === 1 ? "" : "s"} out of line`) }),
+      h("h1", { class: "h1 small", text: heading || (r.obligations.length === 0 ? "No checkable rules found" : bots === 0 ? (r.findings.length === 0 ? (r.skipped_not_applicable ? "No bot settings affected" : "No matching bots") : "No bots out of line") : `${bots} bot${bots === 1 ? "" : "s"} out of line`) }),
       h("p", { class: "meta", text: cx.status === "withdrawn" ? (r.circular_ref || r.source) : `Checked ${r.findings.length} rule and bot pairs from ${r.obligations.length} rule${r.obligations.length === 1 ? "" : "s"} in ${r.circular_ref || r.source}.` +
         (r.skipped_not_applicable ? ` ${r.skipped_not_applicable} pair${r.skipped_not_applicable === 1 ? " was" : "s were"} set aside as not applicable.` : "") })));
     const notes = (cx.warnings || []).slice();
