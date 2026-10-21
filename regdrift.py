@@ -881,6 +881,40 @@ def loose_setting(param: str, bot):
     return found[0] if len(found) == 1 else None
 
 
+UNIT_WORDS = {"day": "day", "days": "day", "month": "month", "months": "month", "year": "year", "years": "year",
+              "hour": "hour", "hours": "hour", "bps": "bps", "lakh": "lakh", "usd": "usd", "percent": "pct", "pct": "pct"}
+
+
+def _unit_of(text: str):
+    """The time or amount unit a setting name or a rule's unit field ends in ('..._months' -> 'month'), else None."""
+    text = re.sub(r"day[_\s]+of[_\s]+(?:the[_\s]+)?(?:next|following)[_\s]+month", "day", str(text).lower())  # 15th day of next month
+    for w in reversed(re.split(r"[_\s]+", text.strip())):
+        if w in UNIT_WORDS:
+            return UNIT_WORDS[w]
+        if w.isdigit() or w in ("million", "next", "of"):
+            continue
+        break
+    return None
+
+
+def unit_setting(ob, bot):
+    """For a bot the search already judged relevant: its single setting measured in the rule's unit, with the rule's
+    number converted if one is in years and the other in months. None when the unit is unknown or several settings
+    share it (then it is not clear which one is meant)."""
+    ru = _unit_of(ob.get("unit") or "") or _unit_of(ob.get("parameter", ""))
+    val = ob.get("required_value")
+    if not ru or isinstance(val, bool) or not isinstance(val, (int, float)):
+        return None
+    fam = {"year": ("year", "month"), "month": ("month", "year")}.get(ru, (ru,))
+    found = [n for n in bot["parameters"] if _unit_of(n) in fam and not isinstance(bot["parameters"][n], bool)]
+    if len(found) != 1:
+        return None
+    name = found[0]
+    if _unit_of(name) == ru:
+        return name, val
+    return name, (val * 12 if ru == "year" else val / 12)
+
+
 SIM_THRESHOLD = {"chroma": float(os.getenv("CHROMA_MIN_SIM", "0.35")), "bow": 0.12}
 
 
@@ -893,7 +927,7 @@ def retrieve(state: State) -> State:
         # (a) structured match: a bot that exposes the rule's parameter is affected. Where the extractor used another
         # name for the same thing ('suspicious_transaction_report_filing_days' for 'str_filing_days'), the bot's single
         # setting with a matching name is used instead, after the model confirms the rule really concerns it.
-        bound = {}
+        bound, rebound = {}, {}
         for b in bots:
             if ob.get("parameter") in b["parameters"]:
                 hits[b["id"]], bound[b["id"]] = 1.0, ob["parameter"]
@@ -915,9 +949,17 @@ def retrieve(state: State) -> State:
             found, kind = retrieve_bow(bots, ob["summary"], 3), "bow"
         for bid, score in found:
             if score >= SIM_THRESHOLD[kind] and len(shared_stems(ob["summary"], by_id[bid])) >= MIN_SHARED_STEMS:
-                hits.setdefault(bid, score)
+                if bid not in hits:
+                    hits[bid] = score
+                    # the bot is about this subject but the rule's name for the number is not the bot's: if exactly one
+                    # of its settings measures in the same unit, compare against that, once the model agrees it is the one
+                    us = unit_setting(ob, by_id[bid])
+                    if us:
+                        alt = {**ob, "parameter": us[0], "required_value": int(us[1]) if float(us[1]).is_integer() else us[1]}
+                        if verify_matches([alt])[0]["parameter"] == us[0]:
+                            bound[bid], rebound[bid] = us[0], alt
         for bid, score in hits.items():
-            o = ob if bound.get(bid, ob.get("parameter")) == ob.get("parameter") else {**ob, "parameter": bound[bid]}
+            o = rebound.get(bid) or (ob if bound.get(bid, ob.get("parameter")) == ob.get("parameter") else {**ob, "parameter": bound[bid]})
             impacts.append({"obligation": o, "bot": by_id[bid], "score": round(score, 2)})
     log.info("[3/5] Retrieved %d (rule, bot) pairs", len(impacts))
     return {"impacts": impacts}
