@@ -1,0 +1,45 @@
+name: Run benchmark
+on:
+  workflow_dispatch:           # runs only when you click "Run workflow"; it never creates Jira tickets
+    inputs:
+      max_minutes:
+        description: "Stop asking the LLM after this many minutes (free Groq limits can make it slow; run again to resume)"
+        default: "240"
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip, cache-dependency-path: requirements.txt }
+      - run: pip install -r requirements.txt
+      - name: Restore cached LLM answers (so a rerun only asks for what is missing)
+        uses: actions/cache/restore@v4
+        with:
+          path: eval/cache
+          key: bench-llm-${{ github.run_id }}
+          restore-keys: bench-llm-
+      - name: Run the four approaches on the labelled cases
+        run: python bench.py --live --max-minutes "$MAX_MINUTES" | tee bench_report.txt
+        env:
+          MAX_MINUTES: ${{ inputs.max_minutes }}          # via env, never interpolated into the script
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      - name: Save cached LLM answers
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: eval/cache
+          key: bench-llm-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark
+          path: |
+            bench_report.txt
+            docs/benchmark.md
+            docs/benchmark.svg
+            docs/benchmark_cases.html
+            docs/benchmark_results.json
+            eval/cache/bench_llm.jsonl
