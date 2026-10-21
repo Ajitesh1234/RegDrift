@@ -353,6 +353,28 @@ class SettingBinding(unittest.TestCase):
         self.assertEqual([i["bot"]["name"] for i in imps if i["score"] >= 0.9], ["Record-Retention-Bot"])
         self.assertEqual([i["obligation"]["parameter"] for i in imps if i["score"] >= 0.9], ["kyc_record_retention_years"])
 
+    def test_unit_matching_picks_the_single_setting_in_the_rules_unit_and_converts_years(self):
+        bot = {"id": "b4", "name": "Dormant-Account-Bot", "platform": "UiPath", "description": "Marks dormant accounts.",
+               "tags": [], "parameters": {"dormant_after_months": 12, "delete_after_retention": True}}
+        ob = self.ob("account_inoperative_after_years", "An account is inoperative after two years without a transaction.")
+        ob.update(required_value=2, unit="years", operator=">=")
+        self.assertEqual(regdrift.unit_setting(ob, bot), ("dormant_after_months", 24))
+        two = {**bot, "parameters": {"a_months": 1, "b_months": 2}}
+        self.assertIsNone(regdrift.unit_setting(ob, two))                  # two candidates: not clear which is meant
+        self.assertIsNone(regdrift.unit_setting({**ob, "required_value": True}, bot))
+
+    def test_a_unit_match_is_used_only_if_the_model_agrees(self):
+        self.bots.append({"id": "b5", "name": "CTR-Reporting-Bot", "platform": "UiPath",
+                          "description": "Submits cash transaction reports to the FIU each month.", "tags": ["aml"],
+                          "parameters": {"ctr_filing_day_of_next_month": 15}})
+        ob = self.ob("cash_transaction_report_submission_day", "Cash transaction reports shall be furnished by the 15th day of the following month.")
+        ob.update(required_value=15, unit="day")
+        found = lambda: [i["obligation"]["parameter"] for i in regdrift.retrieve({"obligations": [ob]})["impacts"] if i["bot"]["id"] == "b5"]
+        self.assertEqual(found(), ["ctr_filing_day_of_next_month"])
+        regdrift.llm_json = lambda p: {"concerns_setting": False}
+        self.assertNotIn("ctr_filing_day_of_next_month", found())
+
+
 if __name__ == "__main__":
     unittest.main()
 
