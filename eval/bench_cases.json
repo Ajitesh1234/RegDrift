@@ -1,0 +1,915 @@
+{
+ "version": "1.0",
+ "about": "Hand-labelled (clause, bot) pairs. 'expected' is the correct verdict written from the clause and the bot's settings, before any system was run. source=real means the wording comes from one of the five real RBI circulars in eval/extract_texts; synthetic clauses are written in the style of RBI directions. label_confidence=review marks labels a reasonable reviewer could dispute; reports show results with and without them.",
+ "cases": [
+  {
+   "id": "B001",
+   "category": "boundary",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Suspicious transaction reports shall be filed within 7 days of arriving at a conclusion of suspicion.",
+   "bot": "STR-Filer-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B002",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Suspicious transaction reports shall be filed within 5 days of arriving at a conclusion of suspicion.",
+   "bot": "STR-Filer-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B003",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Suspicious transaction reports shall be filed within 15 days of arriving at a conclusion of suspicion.",
+   "bot": "STR-Filer-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B004",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Suspicious transaction reports shall be filed not later than 3 days after suspicion is established.",
+   "bot": "STR-Filer-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B005",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Periodic updation of KYC shall be carried out at least once in two years for high risk customers.",
+   "bot": "KYC-Refresh-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B006",
+   "category": "boundary",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Periodic updation of KYC shall be carried out at least once in three years for high risk customers.",
+   "bot": "KYC-Refresh-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B007",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer names shall be screened against sanctions lists within 1 day of a list update.",
+   "bot": "Sanctions-Screening-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B008",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer names shall be screened against sanctions lists within 3 days of a list update.",
+   "bot": "Sanctions-Screening-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B009",
+   "category": "boundary",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer names shall be screened against sanctions lists at least once every 2 days.",
+   "bot": "Sanctions-Screening-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B010",
+   "category": "threshold",
+   "source": "real",
+   "label_confidence": "high",
+   "clause": "Authorised Dealers shall not permit users to take positions without underlying exposure beyond USD 5 million equivalent of notional value.",
+   "bot": "Hedge-Limit-Checker-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B011",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Users may take positions without establishing underlying exposure up to USD 150 million equivalent.",
+   "bot": "Hedge-Limit-Checker-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B012",
+   "category": "boundary",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "The threshold for positions without underlying exposure shall be USD 100 million equivalent.",
+   "bot": "Hedge-Limit-Checker-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B013",
+   "category": "threshold",
+   "source": "real",
+   "label_confidence": "high",
+   "clause": "Documents shall be retained for a period not less than two years.",
+   "bot": "Hedge-Documentation-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B014",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Documents shall be retained for a period not less than seven years.",
+   "bot": "Hedge-Documentation-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B015",
+   "category": "boundary",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Cash transaction reports for each month shall be furnished by the 15th of the succeeding month.",
+   "bot": "CTR-Reporting-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B016",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Cash transaction reports for each month shall be furnished by the 10th of the succeeding month.",
+   "bot": "CTR-Reporting-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B017",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Cash transaction reports for each month shall be furnished by the 20th of the succeeding month.",
+   "bot": "CTR-Reporting-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B018",
+   "category": "boundary",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Interest rates on floating rate loans linked to an external benchmark shall be reset at least once in three months.",
+   "bot": "Loan-Repricing-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B019",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Interest rates on floating rate loans linked to an external benchmark shall be reset at least once in a month.",
+   "bot": "Loan-Repricing-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B020",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Interest rates on floating rate loans linked to an external benchmark shall be reset at least once in six months.",
+   "bot": "Loan-Repricing-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B021",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "An unsecured credit limit on a credit card shall not exceed Rs 10 lakh.",
+   "bot": "Card-Limit-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B022",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "An unsecured credit limit on a credit card shall not exceed Rs 2 lakh.",
+   "bot": "Card-Limit-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B023",
+   "category": "boundary",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer complaints shall be acknowledged within 24 hours.",
+   "bot": "Grievance-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B024",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer complaints shall be acknowledged within 12 hours.",
+   "bot": "Grievance-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B025",
+   "category": "boundary",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer complaints shall be resolved within 30 days.",
+   "bot": "Grievance-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B026",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer complaints shall be resolved within 15 days.",
+   "bot": "Grievance-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B027",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "The proceeds of a cheque shall be credited to the customer account within 1 hour of presentation.",
+   "bot": "Cheque-Clearing-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B028",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "The proceeds of a cheque shall be credited to the customer account within 6 hours of presentation.",
+   "bot": "Cheque-Clearing-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B029",
+   "category": "boundary",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Records shall be maintained for at least five years after the business relationship has ended.",
+   "bot": "Record-Retention-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B030",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Records shall be maintained for at least ten years after the business relationship has ended.",
+   "bot": "Record-Retention-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B031",
+   "category": "boundary",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Frauds shall be reported to the Reserve Bank within 21 days from the date of detection.",
+   "bot": "Fraud-Reporting-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B032",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Frauds shall be reported to the Reserve Bank within 14 days from the date of detection.",
+   "bot": "Fraud-Reporting-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B033",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Banks shall give at least 30 days notice before changing the interest rate on a deposit product.",
+   "bot": "Payments-Rate-Disclosure-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B034",
+   "category": "threshold",
+   "source": "real",
+   "label_confidence": "high",
+   "clause": "The interest rate ceiling on FCNR(B) deposits of one year to less than three years is the overnight alternative reference rate plus 250 basis points.",
+   "bot": "Deposit-Rate-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B035",
+   "category": "threshold",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "The interest rate ceiling on FCNR(B) deposits of one year to less than three years is the overnight alternative reference rate plus 350 basis points.",
+   "bot": "Deposit-Rate-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B036",
+   "category": "yes_no",
+   "source": "real",
+   "label_confidence": "high",
+   "clause": "An Authorised Dealer shall not permit users to rebook any foreign exchange derivative contract that has been cancelled.",
+   "bot": "FX-Derivative-Booking-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B037",
+   "category": "yes_no",
+   "source": "real",
+   "label_confidence": "high",
+   "clause": "An Authorised Dealer shall obtain and retain an undertaking from the user that the exposure has not been hedged with any other Authorised Dealer.",
+   "bot": "Hedge-Documentation-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B038",
+   "category": "yes_no",
+   "source": "real",
+   "label_confidence": "high",
+   "clause": "Interest rates on NRE and NRO deposits shall not be higher than those offered on comparable domestic rupee term deposits.",
+   "bot": "Deposit-Rate-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B039",
+   "category": "yes_no",
+   "source": "real",
+   "label_confidence": "high",
+   "clause": "Interest rates payable on deposits shall be strictly as per the schedule disclosed in advance on the bank's website.",
+   "bot": "Payments-Rate-Disclosure-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B040",
+   "category": "yes_no",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Banks shall delete personal data once the retention period has lapsed.",
+   "bot": "Record-Retention-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B041",
+   "category": "paraphrase",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Rebooking of a cancelled INR derivative contract by a user is prohibited.",
+   "bot": "FX-Derivative-Booking-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B042",
+   "category": "paraphrase",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Users are not allowed to rebook forex derivative contracts that have been cancelled.",
+   "bot": "FX-Derivative-Booking-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B043",
+   "category": "permissive",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "An Authorised Dealer may allow users to rebook a cancelled forex derivative contract.",
+   "bot": "FX-Derivative-Booking-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B044",
+   "category": "permissive",
+   "source": "real",
+   "label_confidence": "review",
+   "clause": "An Authorised Dealer may continue to permit users to rollover foreign exchange derivative contracts on maturity.",
+   "bot": "FX-Derivative-Booking-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B045",
+   "category": "permissive",
+   "source": "real",
+   "label_confidence": "review",
+   "clause": "The bank may also obtain the undertaking as a part of the deal confirmation.",
+   "bot": "Hedge-Documentation-Bot",
+   "expected": "optional_gap"
+  },
+  {
+   "id": "B046",
+   "category": "list",
+   "source": "real",
+   "label_confidence": "high",
+   "clause": "The bank may alternatively obtain the original certified copy in the case of Foreign Portfolio Investors (FPIs).",
+   "bot": "KYC-Document-Verification-Bot",
+   "expected": "optional_gap"
+  },
+  {
+   "id": "B047",
+   "category": "list",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "The bank may alternatively obtain the original certified copy in the case of Non-Resident Indians (NRIs).",
+   "bot": "KYC-Document-Verification-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B048",
+   "category": "list",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "The bank may alternatively obtain the original certified copy in the case of Persons of Indian Origin (PIOs).",
+   "bot": "KYC-Document-Verification-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B049",
+   "category": "list",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "The bank may alternatively obtain the original certified copy in the case of Foreign Institutional Investors.",
+   "bot": "KYC-Document-Verification-Bot",
+   "expected": "optional_gap"
+  },
+  {
+   "id": "B050",
+   "category": "ambiguous",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "A bank may consider extending the certified copy facility to Foreign Portfolio Investors.",
+   "bot": "KYC-Document-Verification-Bot",
+   "expected": "optional_gap"
+  },
+  {
+   "id": "B051",
+   "category": "old_new",
+   "source": "real",
+   "label_confidence": "high",
+   "clause": "The threshold, which was USD 100 million, shall henceforth be USD 5 million equivalent for positions without underlying exposure.",
+   "bot": "Hedge-Limit-Checker-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B052",
+   "category": "old_new",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "The threshold for positions without underlying exposure is reduced from USD 200 million to USD 50 million equivalent.",
+   "bot": "Hedge-Limit-Checker-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B053",
+   "category": "old_new",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "The ceiling on complaint resolution time is revised from 45 days to 30 days.",
+   "bot": "Grievance-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B054",
+   "category": "old_new",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "The reporting time for frauds is shortened from 30 days to 14 days from detection.",
+   "bot": "Fraud-Reporting-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B055",
+   "category": "paraphrase",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Within five days of arriving at a conclusion of suspicion, a bank must furnish the suspicious transaction report to FIU-IND.",
+   "bot": "STR-Filer-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B056",
+   "category": "paraphrase",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "The time limit for furnishing a suspicious transaction report is seven days from the conclusion of suspicion.",
+   "bot": "STR-Filer-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B057",
+   "category": "paraphrase",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "No suspicious transaction report may be filed later than 5 days after suspicion is established.",
+   "bot": "STR-Filer-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B058",
+   "category": "paraphrase",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "The notional ceiling for positions taken without underlying exposure is USD 5 million equivalent.",
+   "bot": "Hedge-Limit-Checker-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B059",
+   "category": "paraphrase",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Users may take positions up to USD 100 million equivalent without establishing the underlying.",
+   "bot": "Hedge-Limit-Checker-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B060",
+   "category": "paraphrase",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "All documents must be kept for a minimum of two years.",
+   "bot": "Hedge-Documentation-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B061",
+   "category": "paraphrase",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Records must be kept for no fewer than eight years after the relationship ends.",
+   "bot": "Record-Retention-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B062",
+   "category": "paraphrase",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Each customer complaint must be acknowledged in 8 hours.",
+   "bot": "Grievance-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B063",
+   "category": "paraphrase",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Monthly cash transaction returns must be filed on or before the 12th of the next month.",
+   "bot": "CTR-Reporting-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B064",
+   "category": "paraphrase",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Update the KYC of high risk customers every two years.",
+   "bot": "KYC-Refresh-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B065",
+   "category": "unit_trap",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "An unsecured credit limit on a credit card shall not exceed Rs 3,00,000.",
+   "bot": "Card-Limit-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B066",
+   "category": "unit_trap",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer complaints shall be resolved within one month.",
+   "bot": "Grievance-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B067",
+   "category": "unit_trap",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Interest rates on floating rate loans linked to an external benchmark shall be reset quarterly.",
+   "bot": "Loan-Repricing-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B068",
+   "category": "unit_trap",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Frauds shall be reported to the Reserve Bank inside three weeks of detection.",
+   "bot": "Fraud-Reporting-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B069",
+   "category": "unit_trap",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer names shall be screened against sanctions lists every day.",
+   "bot": "Sanctions-Screening-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B070",
+   "category": "unit_trap",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "An account shall be treated as inoperative if there are no customer-induced transactions for two years.",
+   "bot": "Dormant-Account-Bot",
+   "expected": "compliant"
+  },
+  {
+   "id": "B071",
+   "category": "unit_trap",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "An account shall be treated as inoperative if there are no customer-induced transactions for one year.",
+   "bot": "Dormant-Account-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B072",
+   "category": "not_applicable",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Suspicious transaction reports shall be filed within 5 days of arriving at a conclusion of suspicion.",
+   "bot": "Card-Limit-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B073",
+   "category": "not_applicable",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "An Authorised Dealer shall not permit users to rebook any foreign exchange derivative contract that has been cancelled.",
+   "bot": "STR-Filer-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B074",
+   "category": "not_applicable",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Positions without underlying exposure shall not exceed USD 5 million equivalent.",
+   "bot": "Grievance-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B075",
+   "category": "not_applicable",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "The bank may alternatively obtain the original certified copy in the case of Foreign Portfolio Investors (FPIs).",
+   "bot": "Cheque-Clearing-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B076",
+   "category": "not_applicable",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer names shall be screened against sanctions lists within 1 day of a list update.",
+   "bot": "Fraud-Reporting-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B077",
+   "category": "not_applicable",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Records shall be maintained for at least ten years after the business relationship has ended.",
+   "bot": "CTR-Reporting-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B078",
+   "category": "not_applicable",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Interest rates on floating rate loans shall be reset at least once in a month.",
+   "bot": "Dormant-Account-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B079",
+   "category": "not_applicable",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer complaints shall be acknowledged within 12 hours.",
+   "bot": "KYC-Refresh-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B080",
+   "category": "not_applicable",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "An unsecured credit limit on a credit card shall not exceed Rs 2 lakh.",
+   "bot": "Deposit-Rate-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B081",
+   "category": "not_applicable",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Frauds shall be reported to the Reserve Bank within 14 days from the date of detection.",
+   "bot": "Hedge-Limit-Checker-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B082",
+   "category": "lookalike",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "Suspicious transaction reports shall be filed within 5 days of arriving at a conclusion of suspicion.",
+   "bot": "Fraud-Reporting-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B083",
+   "category": "lookalike",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "Frauds shall be reported to the Reserve Bank within 14 days from the date of detection.",
+   "bot": "STR-Filer-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B084",
+   "category": "lookalike",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer complaints shall be acknowledged within 12 hours.",
+   "bot": "Cheque-Clearing-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B085",
+   "category": "lookalike",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "Records of cash transactions shall be maintained for ten years.",
+   "bot": "Record-Retention-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B086",
+   "category": "missing_info",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "Loans shall be disbursed within 5 days of sanction.",
+   "bot": "Loan-Disbursal-Bot",
+   "expected": "at_risk"
+  },
+  {
+   "id": "B087",
+   "category": "missing_info",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "The risk category of a customer shall be reviewed at least once every year.",
+   "bot": "Loan-Disbursal-Bot",
+   "expected": "at_risk"
+  },
+  {
+   "id": "B088",
+   "category": "missing_info",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "Sanction letters shall be issued in the vernacular language of the borrower.",
+   "bot": "Loan-Disbursal-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B089",
+   "category": "contradiction",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "Banks shall file suspicious transaction reports within 7 days. In the case of cross-border transactions, reports shall be filed within 3 days.",
+   "bot": "STR-Filer-Bot",
+   "expected": "at_risk"
+  },
+  {
+   "id": "B090",
+   "category": "contradiction",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "Records shall be maintained for five years. Records of high value transactions shall be maintained for ten years.",
+   "bot": "Record-Retention-Bot",
+   "expected": "at_risk"
+  },
+  {
+   "id": "B091",
+   "category": "contradiction",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "Suspicious transaction reports shall be filed within 7 days. Suspicious transaction reports shall be filed within 3 days.",
+   "bot": "STR-Filer-Bot",
+   "expected": "at_risk"
+  },
+  {
+   "id": "B092",
+   "category": "exception",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "An Authorised Dealer shall not permit rebooking of cancelled contracts, except contracts cancelled on account of an RBI direction.",
+   "bot": "FX-Derivative-Booking-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B093",
+   "category": "exception",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "Positions without underlying exposure shall not exceed USD 5 million equivalent, except for hedging by exporters with approved limits.",
+   "bot": "Hedge-Limit-Checker-Bot",
+   "expected": "at_risk"
+  },
+  {
+   "id": "B094",
+   "category": "exception",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "The proceeds of a cheque shall be credited within 1 hour of presentation, except for outstation cheques.",
+   "bot": "Cheque-Clearing-Bot",
+   "expected": "violating"
+  },
+  {
+   "id": "B095",
+   "category": "exception",
+   "source": "real",
+   "label_confidence": "review",
+   "clause": "The interest rate ceiling on FCNR(B) deposits of three to five years is temporarily withdrawn until September 30, 2026.",
+   "bot": "Deposit-Rate-Bot",
+   "expected": "not_applicable"
+  },
+  {
+   "id": "B096",
+   "category": "exception",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "An unsecured credit limit shall not exceed Rs 3 lakh for new-to-credit customers.",
+   "bot": "Card-Limit-Bot",
+   "expected": "at_risk"
+  },
+  {
+   "id": "B097",
+   "category": "ambiguous",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "A suspicious transaction report shall be furnished promptly after suspicion is established.",
+   "bot": "STR-Filer-Bot",
+   "expected": "at_risk"
+  },
+  {
+   "id": "B098",
+   "category": "ambiguous",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Banks shall take reasonable steps to re-verify high risk customers periodically.",
+   "bot": "KYC-Refresh-Bot",
+   "expected": "at_risk"
+  },
+  {
+   "id": "B099",
+   "category": "ambiguous",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer complaints should be resolved expeditiously.",
+   "bot": "Grievance-Bot",
+   "expected": "at_risk"
+  },
+  {
+   "id": "B100",
+   "category": "ambiguous",
+   "source": "synthetic",
+   "label_confidence": "high",
+   "clause": "Customer names shall be screened against UN sanctions lists without delay.",
+   "bot": "Sanctions-Screening-Bot",
+   "expected": "at_risk"
+  },
+  {
+   "id": "B101",
+   "category": "ambiguous",
+   "source": "synthetic",
+   "label_confidence": "review",
+   "clause": "Banks shall display the deposit rate schedule at all branches.",
+   "bot": "Payments-Rate-Disclosure-Bot",
+   "expected": "not_applicable"
+  }
+ ]
+}
