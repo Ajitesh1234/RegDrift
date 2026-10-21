@@ -309,6 +309,50 @@ class CLI(unittest.TestCase):
             regdrift.jira_request = orig
             for k in env: os.environ.pop(k)
 
+class SettingBinding(unittest.TestCase):
+    def setUp(self):
+        self.orig_llm, self.orig_bots = regdrift.llm_json, regdrift.load_bots
+        self.bots = [
+            {"id": "b1", "name": "STR-Filer-Bot", "platform": "UiPath", "description": "Files suspicious transaction reports with the FIU.",
+             "tags": ["aml"], "parameters": {"str_filing_days": 7}},
+            {"id": "b2", "name": "Hedge-Documentation-Bot", "platform": "UiPath", "description": "Captures hedge undertakings and keeps hedge documents.",
+             "tags": ["fx"], "parameters": {"record_retention_years": 5}},
+            {"id": "b3", "name": "Record-Retention-Bot", "platform": "UiPath", "description": "Keeps customer account and cash transaction records for the retention period.",
+             "tags": ["records"], "parameters": {"kyc_record_retention_years": 5}},
+        ]
+        regdrift.load_bots = lambda: self.bots
+        regdrift.llm_json = lambda p: {"concerns_setting": True}
+
+    def tearDown(self):
+        regdrift.llm_json, regdrift.load_bots = self.orig_llm, self.orig_bots
+
+    def ob(self, param, summary):
+        return {"clause": "Clause 1", "summary": summary, "parameter": param, "operator": "<=", "required_value": 7,
+                "unit": "days", "modality": "mandatory"}
+
+    def test_abbreviation_and_extra_words_find_the_same_setting(self):
+        self.assertEqual(regdrift.loose_setting("suspicious_transaction_report_filing_days", self.bots[0]), "str_filing_days")
+        self.assertIsNone(regdrift.loose_setting("fraud_report_days", self.bots[0]))   # shares only a generic word
+        self.assertIsNone(regdrift.loose_setting("str_filing_days", self.bots[0]))     # exact names are handled elsewhere
+
+    def test_a_renamed_setting_is_bound_to_the_bots_own_name(self):
+        ob = self.ob("suspicious_transaction_report_filing_days", "Suspicious transaction reports shall be filed within 7 days.")
+        imps = regdrift.retrieve({"obligations": [ob]})["impacts"]
+        self.assertEqual([(i["bot"]["name"], i["obligation"]["parameter"]) for i in imps], [("STR-Filer-Bot", "str_filing_days")])
+        self.assertEqual(regdrift.judge(imps[0])["status"], "compliant")
+
+    def test_binding_is_dropped_when_the_model_says_the_rule_is_about_something_else(self):
+        regdrift.llm_json = lambda p: {"concerns_setting": False}
+        ob = self.ob("suspicious_transaction_report_filing_days", "Suspicious transaction reports shall be filed within 7 days.")
+        imps = regdrift.retrieve({"obligations": [ob]})["impacts"]
+        self.assertFalse([i for i in imps if i["obligation"]["parameter"] == "str_filing_days" and i["score"] == 0.9])
+
+    def test_one_name_on_two_bots_goes_to_the_better_fitting_bot(self):
+        ob = self.ob("record_retention_years", "Records of cash transactions shall be maintained for five years.")
+        imps = regdrift.retrieve({"obligations": [ob]})["impacts"]
+        self.assertEqual([i["bot"]["name"] for i in imps if i["score"] >= 0.9], ["Record-Retention-Bot"])
+        self.assertEqual([i["obligation"]["parameter"] for i in imps if i["score"] >= 0.9], ["kyc_record_retention_years"])
+
 if __name__ == "__main__":
     unittest.main()
 
