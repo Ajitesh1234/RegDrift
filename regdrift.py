@@ -851,6 +851,36 @@ def shared_stems(rule: str, bot) -> set:
     return _stems(rule) & _stems(bot_doc(bot))
 
 
+def _name_stems(name: str) -> set:
+    return {t[:4] for t in str(name).lower().split("_") if t and t not in GENERIC_PARAM_WORDS and not t.isdigit()}
+
+
+def _name_with_acronyms(name: str) -> set:
+    """Stems of a setting name plus the initials of any 2-4 word run in it, so 'suspicious_transaction_report_*'
+    also offers 'str' and can meet a setting called 'str_*'."""
+    toks = [t for t in str(name).lower().split("_") if t and t not in GENERIC_PARAM_WORDS and not t.isdigit()]
+    out = {t[:4] for t in toks}
+    for n in (2, 3, 4):
+        for i in range(len(toks) - n + 1):
+            out.add("".join(t[0] for t in toks[i:i + n])[:4])
+    return out
+
+
+def loose_setting(param: str, bot):
+    """The one setting of `bot` whose name says the same thing as `param` in other words (abbreviation, extra or
+    missing qualifier). None when there is no such setting or more than one candidate."""
+    a_full, found = _name_with_acronyms(param), []
+    a = _name_stems(param)
+    for name in bot["parameters"]:
+        b = _name_stems(name)
+        if not a or not b or name == param:
+            continue
+        small = min(len(a), len(b))
+        if (b <= a_full and (len(b) >= 2 or b == a)) or (a <= b and small >= 2) or (b <= a and small >= 2):
+            found.append(name)
+    return found[0] if len(found) == 1 else None
+
+
 SIM_THRESHOLD = {"chroma": float(os.getenv("CHROMA_MIN_SIM", "0.35")), "bow": 0.12}
 
 
@@ -860,10 +890,22 @@ def retrieve(state: State) -> State:
     impacts = []
     for ob in state["obligations"]:
         hits, kind = {}, "chroma"
-        # (a) exact structured match: a bot that exposes the rule's parameter is always affected
+        # (a) structured match: a bot that exposes the rule's parameter is affected. Where the extractor used another
+        # name for the same thing ('suspicious_transaction_report_filing_days' for 'str_filing_days'), the bot's single
+        # setting with a matching name is used instead, after the model confirms the rule really concerns it.
+        bound = {}
         for b in bots:
             if ob.get("parameter") in b["parameters"]:
-                hits[b["id"]] = 1.0
+                hits[b["id"]], bound[b["id"]] = 1.0, ob["parameter"]
+            else:
+                alt = loose_setting(ob.get("parameter", ""), b)
+                if alt and verify_matches([{**ob, "parameter": alt}])[0]["parameter"] == alt:
+                    hits[b["id"]], bound[b["id"]] = 0.9, alt
+        if len(hits) > 1:
+            # two bots expose a setting with this name ('record_retention_years'): the rule belongs to the one whose
+            # own description shares the most with the rule, not to both
+            best = max(len(shared_stems(ob["summary"], by_id[i])) for i in hits)
+            hits = {i: v for i, v in hits.items() if len(shared_stems(ob["summary"], by_id[i])) == best}
         # (b) semantic retrieval for bots without that parameter
         try:
             if os.getenv("REGDRIFT_RETRIEVER", "").lower() == "bow":  # low-memory hosts: skip the vector DB
@@ -875,7 +917,8 @@ def retrieve(state: State) -> State:
             if score >= SIM_THRESHOLD[kind] and len(shared_stems(ob["summary"], by_id[bid])) >= MIN_SHARED_STEMS:
                 hits.setdefault(bid, score)
         for bid, score in hits.items():
-            impacts.append({"obligation": ob, "bot": by_id[bid], "score": round(score, 2)})
+            o = ob if bound.get(bid, ob.get("parameter")) == ob.get("parameter") else {**ob, "parameter": bound[bid]}
+            impacts.append({"obligation": o, "bot": by_id[bid], "score": round(score, 2)})
     log.info("[3/5] Retrieved %d (rule, bot) pairs", len(impacts))
     return {"impacts": impacts}
 
