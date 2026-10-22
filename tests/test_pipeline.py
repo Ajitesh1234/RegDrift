@@ -322,9 +322,15 @@ class SettingBinding(unittest.TestCase):
         ]
         regdrift.load_bots = lambda: self.bots
         regdrift.llm_json = lambda p: {"concerns_setting": True}
+        self.orig_ret = os.environ.get("REGDRIFT_RETRIEVER")
+        os.environ["REGDRIFT_RETRIEVER"] = "bow"          # same word-based search everywhere, with or without the vector DB
 
     def tearDown(self):
         regdrift.llm_json, regdrift.load_bots = self.orig_llm, self.orig_bots
+        if self.orig_ret is None:
+            os.environ.pop("REGDRIFT_RETRIEVER", None)
+        else:
+            os.environ["REGDRIFT_RETRIEVER"] = self.orig_ret
 
     def ob(self, param, summary):
         return {"clause": "Clause 1", "summary": summary, "parameter": param, "operator": "<=", "required_value": 7,
@@ -373,6 +379,23 @@ class SettingBinding(unittest.TestCase):
         self.assertEqual(found(), ["ctr_filing_day_of_next_month"])
         regdrift.llm_json = lambda p: {"concerns_setting": False}
         self.assertNotIn("ctr_filing_day_of_next_month", found())
+
+
+class FrequencyRules(unittest.TestCase):
+    def ob(self, summary, op=">=", unit="months", val=3):
+        return {"clause": "Clause 1", "summary": summary, "parameter": "reset_interval", "operator": op, "required_value": val,
+                "unit": unit, "modality": "mandatory"}
+
+    def test_at_least_once_in_n_months_is_a_maximum_gap(self):
+        o = regdrift.fix_frequency(self.ob("Rates shall be reset at least once in three months."))
+        self.assertEqual(o["operator"], "<=")
+
+    def test_record_keeping_minimums_are_left_alone(self):
+        o = self.ob("Records shall be kept for at least five years.", unit="years", val=5)
+        self.assertEqual(regdrift.fix_frequency(o), o)
+
+    def test_prompt_explains_interval_direction(self):
+        self.assertIn("maximum interval", regdrift.PROMPT_EXTRACT)
 
 
 if __name__ == "__main__":
@@ -786,7 +809,7 @@ class LongCircular(unittest.TestCase):
         regdrift.llm_json = stub
         raw = regdrift.llm_extract_text(self.long_text())
         self.assertGreater(len(self.prompts), 3)
-        self.assertTrue(all(len(p) < regdrift.CHUNK_CHARS + 2500 for p in self.prompts))  # every request stays small
+        self.assertTrue(all(len(p) < regdrift.CHUNK_CHARS + 3500 for p in self.prompts))  # every request stays small
         self.assertEqual(len(raw), len(self.prompts))
 
     def test_sections_without_obligation_wording_are_skipped(self):
