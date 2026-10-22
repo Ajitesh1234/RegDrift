@@ -267,7 +267,8 @@ OBLIGATION_HINT = re.compile(
 # Which sections of a long circular are worth sending to the LLM. Wider than OBLIGATION_HINT on purpose: a rate-change
 # circular ("increase the repo rate from 5.25 to 5.50 per cent") has no "shall" or "must" but is entirely rules.
 CHUNK_HINT = re.compile(OBLIGATION_HINT.pattern[:-3] + r"|per\s?cent|percent|%|basis points?|bps|rates?|ceiling|"
-                        r"floor|limit|threshold|decided|extend(?:ed|s)?|withdrawn)\b", re.I)
+                        r"floor|limit|threshold|decided|extend(?:ed|s)?|withdrawn|shortened|reduced|enhanced|increased|every|updated?|"
+                        r"\d+\s*(?:days?|months?|years?|hours?))\b", re.I)
 
 
 def iter_clauses(text):
@@ -911,6 +912,15 @@ def _unit_of(text: str):
     return None
 
 
+def list_setting(ob, bot):
+    """A rule that adds an item to a list ("contains") is compared against the bot's one list-valued setting. None when
+    the bot has no list setting or several. The value is returned unchanged."""
+    if ob.get("operator") != "contains":
+        return None
+    found = [n for n, v in bot["parameters"].items() if isinstance(v, list)]
+    return (found[0], ob.get("required_value")) if len(found) == 1 else None
+
+
 def unit_setting(ob, bot):
     """For a bot the search already judged relevant: its single setting measured in the rule's unit, with the rule's
     number converted if one is in years and the other in months. None when the unit is unknown or several settings
@@ -967,9 +977,9 @@ def retrieve(state: State) -> State:
                     hits[bid] = score
                     # the bot is about this subject but the rule's name for the number is not the bot's: if exactly one
                     # of its settings measures in the same unit, compare against that, once the model agrees it is the one
-                    us = unit_setting(ob, by_id[bid])
+                    us = list_setting(ob, by_id[bid]) or unit_setting(ob, by_id[bid])
                     if us:
-                        alt = {**ob, "parameter": us[0], "required_value": int(us[1]) if float(us[1]).is_integer() else us[1]}
+                        alt = {**ob, "parameter": us[0], "required_value": int(us[1]) if isinstance(us[1], float) and us[1].is_integer() else us[1]}
                         if verify_matches([alt])[0]["parameter"] == us[0]:
                             bound[bid], rebound[bid] = us[0], alt
         for bid, score in hits.items():
