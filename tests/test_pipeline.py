@@ -403,6 +403,42 @@ class FrequencyRules(unittest.TestCase):
         self.assertIn("maximum interval", regdrift.PROMPT_EXTRACT)
 
 
+class ListRulesAndHints(unittest.TestCase):
+    def setUp(self):
+        self.orig_llm, self.orig_bots = regdrift.llm_json, regdrift.load_bots
+        self.bot = {"id": "k1", "name": "KYC-Document-Verification-Bot", "platform": "UiPath",
+                    "description": "Verifies identity documents and accepts certified copies for non-resident customers.",
+                    "tags": [], "parameters": {"certified_copy_accepted_customer_types": ["NRI", "PIO"]}}
+        regdrift.load_bots = lambda: [self.bot]
+        regdrift.llm_json = lambda p: {"concerns_setting": True}
+        self.orig_ret = os.environ.get("REGDRIFT_RETRIEVER")
+        os.environ["REGDRIFT_RETRIEVER"] = "bow"
+
+    def tearDown(self):
+        regdrift.llm_json, regdrift.load_bots = self.orig_llm, self.orig_bots
+        if self.orig_ret is None:
+            os.environ.pop("REGDRIFT_RETRIEVER", None)
+        else:
+            os.environ["REGDRIFT_RETRIEVER"] = self.orig_ret
+
+    def ob(self, who):
+        return {"clause": "Clause 1", "summary": f"The bank may alternatively obtain the certified copy for {who} customers.",
+                "parameter": "unmapped_bank_may_obtain", "operator": "contains", "required_value": who, "unit": "", "modality": "permissive"}
+
+    def test_a_list_rule_is_compared_against_the_bots_list_setting(self):
+        imps = regdrift.retrieve({"obligations": [self.ob("Non-Resident Indians")]})["impacts"]
+        self.assertEqual(imps[0]["obligation"]["parameter"], "certified_copy_accepted_customer_types")
+        self.assertEqual(regdrift.judge(imps[0])["status"], "compliant")
+        imps = regdrift.retrieve({"obligations": [self.ob("Foreign Portfolio Investors")]})["impacts"]
+        self.assertEqual(regdrift.judge(imps[0])["status"], "optional_gap")
+
+    def test_sections_with_only_a_period_or_a_change_are_still_read(self):
+        for text in ("Update the KYC of high risk customers every two years.",
+                     "The reporting time for frauds is shortened from 30 days to 14 days from detection."):
+            self.assertTrue(regdrift.CHUNK_HINT.search(text), text)
+        self.assertFalse(regdrift.CHUNK_HINT.search("ANNEXURE\nName of bank\nAddress\nSignature"))
+
+
 if __name__ == "__main__":
     unittest.main()
 
