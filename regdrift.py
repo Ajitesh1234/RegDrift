@@ -673,7 +673,9 @@ def _setting_meaning(param: str) -> str:
     for b in load_bots():
         if param in b["parameters"]:
             note = (b.get("parameter_notes") or {}).get(param)
-            return (note + " " if note else "") + f"(bot {b['name']}: {b['description']})"
+            cur = b["parameters"][param]
+            kind = f"A list setting; it currently holds: {', '.join(map(str, cur))}. " if isinstance(cur, list) and cur else ""
+            return kind + (note + " " if note else "") + f"(bot {b['name']}: {b['description']})"
     return ""
 
 
