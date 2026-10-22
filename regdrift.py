@@ -334,6 +334,9 @@ collects a hedge undertaking), choose a new descriptive snake_case name instead.
 {params}
 Use "<=" for maximums ("not exceed", "up to", "within", "not more than"), ">=" for minimums ("at least", "not less than"),
 and "==" only for exact values or yes/no rules.
+A rule about how often something must happen or how long may pass first ("at least once in 3 months", "inoperative after
+one year without transactions") sets a maximum interval: use "<=" with the interval. "At least" on how long something
+must be kept (records kept for at least five years) stays ">=".
 For a deadline or calendar date, give required_value as an ISO string "YYYY-MM-DD" with unit "date":
 "<=" for "by / on or before", ">=" for "on or after / not earlier than". Durations ("within 30 days") stay numbers.
 If the circular changes an old limit to a new one, use the NEW value. Skip clauses with no checkable rule.
@@ -618,6 +621,17 @@ def is_meta_rule(ob) -> bool:
 PCT_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(?:%|per\s?cent|percent)", re.I)
 
 
+FREQUENCY_RE = re.compile(r"(?i)\bat\s+least\s+once\s+(?:in|every|per|within)\b|\bonce\s+(?:in|every)\s+(?:an?\s+|\d+\s+|[a-z]+\s+)?(?:day|week|month|year)")
+
+
+def fix_frequency(ob):
+    """'Reset at least once in three months' means a gap of at most three months, but a model sometimes reports
+    '>= 3'. For a rule worded as a frequency, a minimum on the number is turned into a maximum."""
+    if ob.get("operator") == ">=" and FREQUENCY_RE.search(ob.get("summary", "")) and _unit_of(ob.get("unit", "") or ob.get("parameter", "")):
+        return {**ob, "operator": "<="}
+    return ob
+
+
 def fix_percent(ob):
     """'must be set to 50 %' came back as required_value 0.5 with unit 'percent'. A bot storing 50 would then look
     wildly out of line, so when the rule text prints the number as a percentage, keep it as printed."""
@@ -788,7 +802,7 @@ def extract(state: State) -> State:
         for clause, body in iter_clauses(text):
             raw += [{**o, "clause": clause, "summary": body} for o in rules_extract_clause(body)]
     obs = [v for o in raw if (v := validate_obligation(o))]
-    obs = [fix_percent(fix_changed_limit(o, text)) for o in obs]
+    obs = [fix_frequency(fix_percent(fix_changed_limit(o, text))) for o in obs]
     meta = sum(is_meta_rule(o) for o in obs)
     if meta:
         log.info("  [set aside %d commencement/repeal/applicability notice(s): they are about the circular, not a bot]", meta)
