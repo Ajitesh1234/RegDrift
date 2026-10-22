@@ -432,6 +432,9 @@ class ListRulesAndHints(unittest.TestCase):
         imps = regdrift.retrieve({"obligations": [self.ob("Foreign Portfolio Investors")]})["impacts"]
         self.assertEqual(regdrift.judge(imps[0])["status"], "optional_gap")
 
+    def test_the_check_is_told_what_a_list_setting_holds(self):
+        self.assertIn("currently holds: NRI, PIO", regdrift._setting_meaning("certified_copy_accepted_customer_types"))
+
     def test_sections_with_only_a_period_or_a_change_are_still_read(self):
         for text in ("Update the KYC of high risk customers every two years.",
                      "The reporting time for frauds is shortened from 30 days to 14 days from detection."):
