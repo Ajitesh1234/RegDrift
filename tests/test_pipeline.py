@@ -369,6 +369,11 @@ class SettingBinding(unittest.TestCase):
         self.assertIsNone(regdrift.unit_setting(ob, two))                  # two candidates: not clear which is meant
         self.assertIsNone(regdrift.unit_setting({**ob, "required_value": True}, bot))
 
+    def test_day_of_the_month_is_a_day_not_a_month(self):
+        for text in ("day of the succeeding month", "15th day of next month", "ctr_filing_day_of_next_month", "day of month"):
+            self.assertEqual(regdrift._unit_of(text), "day", text)
+        self.assertEqual(regdrift._unit_of("reset_interval_months"), "month")
+
     def test_a_unit_match_is_used_only_if_the_model_agrees(self):
         self.bots.append({"id": "b5", "name": "CTR-Reporting-Bot", "platform": "UiPath",
                           "description": "Submits cash transaction reports to the FIU each month.", "tags": ["aml"],
