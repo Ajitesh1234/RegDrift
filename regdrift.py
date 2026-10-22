@@ -901,7 +901,7 @@ UNIT_WORDS = {"day": "day", "days": "day", "month": "month", "months": "month", 
 
 def _unit_of(text: str):
     """The time or amount unit a setting name or a rule's unit field ends in ('..._months' -> 'month'), else None."""
-    text = re.sub(r"day[_\s]+of[_\s]+(?:the[_\s]+)?(?:next|following)[_\s]+month", "day", str(text).lower())  # 15th day of next month
+    text = re.sub(r"day[_\s]+of[_\s]+(?:the[_\s]+)?(?:(?:next|following|succeeding|subsequent|each|every)[_\s]+)?month", "day", str(text).lower())  # 15th day of next month
     for w in reversed(re.split(r"[_\s]+", text.strip())):
         if w in UNIT_WORDS:
             return UNIT_WORDS[w]
